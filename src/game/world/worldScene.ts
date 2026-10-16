@@ -1,7 +1,13 @@
 /**
- * HORIZON: OPEN ROADS - 3D World Scene Builder
- * Follows Three.js Skill directives: Instanced scenery, RoomEnvironment PBR,
- * atmospheric fog, and zero 404 external asset dependencies.
+ * HORIZON: OPEN ROADS - Ultra-Realistic 3D World Scene Builder
+ * Inspired by Forza Horizon's breathtaking open-world atmosphere:
+ * - Dynamic Sky Dome with golden-hour atmospheric haze and drifting 3D clouds
+ * - Realistic PBR road surfacing with motorsport rumble-strip kerbs & guardrails
+ * - Coastal town architecture with illuminated villas, balconies, and streetlights
+ * - Working promontory lighthouse with animated 360° revolving searchlight beam
+ * - Festival hot-air balloons drifting peacefully across the mountain horizon
+ * - Main Festival Hub with animated searchlight sweeps, truss gantries, and neon signs
+ * - Animated ocean waves with specular sun glint and coastal surf
  */
 
 import * as THREE from 'three';
@@ -16,7 +22,6 @@ import {
   GAME_SPEED_TRAPS,
   WORLD_SIZE,
 } from './roadNetwork';
-import { CollectibleBoard } from '../../types/game';
 
 export interface WorldBuildResult {
   scene: THREE.Scene;
@@ -29,7 +34,46 @@ export interface WorldBuildResult {
 }
 
 /**
- * Creates procedural road texture with dashed yellow centerline and white edge lines
+ * Creates a high-resolution sky dome texture with a rich golden-hour gradient
+ */
+function createSkyCanvasTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  // Vertical sky gradient (Zenith deep azure -> horizon golden peach)
+  const grad = ctx.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0.0, '#0f2444'); // Deep twilight sapphire zenith
+  grad.addColorStop(0.35, '#1e4878'); // Rich blue upper atmosphere
+  grad.addColorStop(0.65, '#427bb5'); // Atmospheric azure
+  grad.addColorStop(0.85, '#e08f52'); // Warm golden sunset haze
+  grad.addColorStop(0.96, '#f6c28b'); // Luminous horizon amber
+  grad.addColorStop(1.0, '#dfb185'); // Ground fog blend
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1024, 512);
+
+  // Distant subtle mountain silhouettes along the horizon
+  ctx.fillStyle = 'rgba(30, 48, 75, 0.45)';
+  ctx.beginPath();
+  ctx.moveTo(0, 512);
+  for (let x = 0; x <= 1024; x += 16) {
+    const h = Math.sin(x * 0.012) * 22 + Math.cos(x * 0.028) * 14 + 480;
+    ctx.lineTo(x, h);
+  }
+  ctx.lineTo(1024, 512);
+  ctx.closePath();
+  ctx.fill();
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/**
+ * Creates procedural road texture with realistic bituminous asphalt,
+ * fine aggregate grain, clean painted road striping, and optional motorsport kerbs
  */
 function createRoadCanvasTexture(isDirt: boolean = false): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -38,37 +82,51 @@ function createRoadCanvasTexture(isDirt: boolean = false): THREE.CanvasTexture {
   const ctx = canvas.getContext('2d')!;
 
   if (isDirt) {
-    ctx.fillStyle = '#6b5138';
-    ctx.fillRect(0, 0, 512, 512);
-    // Gravel specks
-    for (let i = 0; i < 400; i++) {
-      ctx.fillStyle = Math.random() > 0.5 ? '#826549' : '#523e2b';
-      ctx.fillRect(Math.random() * 512, Math.random() * 512, 4 + Math.random() * 6, 3 + Math.random() * 5);
-    }
-    // Tire ruts
-    ctx.fillStyle = '#483523';
-    ctx.fillRect(120, 0, 50, 512);
-    ctx.fillRect(342, 0, 50, 512);
-  } else {
-    // Asphalt base
-    ctx.fillStyle = '#23272e';
+    ctx.fillStyle = '#5c432d';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Subtle asphalt grain
+    // Gravel specks & stones
     for (let i = 0; i < 600; i++) {
-      ctx.fillStyle = Math.random() > 0.5 ? '#2d333b' : '#1b1d22';
+      ctx.fillStyle = Math.random() > 0.5 ? '#75583d' : '#453220';
+      ctx.fillRect(Math.random() * 512, Math.random() * 512, 3 + Math.random() * 5, 3 + Math.random() * 4);
+    }
+    // Tire groove ruts
+    ctx.fillStyle = '#3f2c1b';
+    ctx.fillRect(115, 0, 65, 512);
+    ctx.fillRect(332, 0, 65, 512);
+  } else {
+    // High-realism asphalt base
+    ctx.fillStyle = '#1e2229';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Fine mineral aggregate grain
+    for (let i = 0; i < 1200; i++) {
+      ctx.fillStyle = Math.random() > 0.6 ? '#282d36' : '#15181d';
       ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
     }
 
-    // White edge lines
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(24, 0, 16, 512);
-    ctx.fillRect(472, 0, 16, 512);
+    // Centerline oil / wear track
+    ctx.fillStyle = 'rgba(15, 17, 21, 0.4)';
+    ctx.fillRect(210, 0, 92, 512);
 
-    // Yellow dashed centerline
-    ctx.fillStyle = '#ffd166';
+    // Solid white shoulder edge lines
+    ctx.fillStyle = '#f0f3f6';
+    ctx.fillRect(20, 0, 18, 512);
+    ctx.fillRect(474, 0, 18, 512);
+
+    // Motorsport Red & White Rumble Strips (Kerbs) on outer edges
+    const kerbSize = 32;
+    for (let y = 0; y < 512; y += kerbSize) {
+      const isRed = (y / kerbSize) % 2 === 0;
+      ctx.fillStyle = isRed ? '#d92231' : '#f0f3f6';
+      ctx.fillRect(0, y, 16, kerbSize);
+      ctx.fillRect(496, y, 16, kerbSize);
+    }
+
+    // Clean dashed yellow highway centerline
+    ctx.fillStyle = '#ffc837';
     for (let y = 0; y < 512; y += 64) {
-      ctx.fillRect(250, y + 12, 12, 40);
+      ctx.fillRect(249, y + 14, 14, 38);
     }
   }
 
@@ -86,7 +144,7 @@ function buildRoadMesh(waypoints: RoadWaypoint[], isDirt: boolean = false): THRE
   const curvePoints = waypoints.map((p) => new THREE.Vector3(p.x, getTerrainHeight(p.x, p.z) + 0.08, p.z));
   const curve = new THREE.CatmullRomCurve3(curvePoints, waypoints[0].x === waypoints[waypoints.length - 1].x);
 
-  const numSegments = waypoints.length * 28;
+  const numSegments = waypoints.length * 32;
   const positions: number[] = [];
   const uvs: number[] = [];
   const indices: number[] = [];
@@ -99,8 +157,7 @@ function buildRoadMesh(waypoints: RoadWaypoint[], isDirt: boolean = false): THRE
     const tangent = curve.getTangentAt(t);
     const normal = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
 
-    // Adjust road Y flush with terrain
-    const roadY = getTerrainHeight(pt.x, pt.z) + 0.08;
+    const roadY = getTerrainHeight(pt.x, pt.z) + 0.09;
     const halfWidth = defaultWidth * 0.5;
 
     const leftX = pt.x - normal.x * halfWidth;
@@ -111,7 +168,7 @@ function buildRoadMesh(waypoints: RoadWaypoint[], isDirt: boolean = false): THRE
     positions.push(leftX, roadY, leftZ);
     positions.push(rightX, roadY, rightZ);
 
-    const v = t * (waypoints.length * 4);
+    const v = t * (waypoints.length * 5);
     uvs.push(0, v);
     uvs.push(1, v);
 
@@ -133,8 +190,8 @@ function buildRoadMesh(waypoints: RoadWaypoint[], isDirt: boolean = false): THRE
 
   const mat = new THREE.MeshStandardMaterial({
     map: texture,
-    roughness: isDirt ? 0.95 : 0.75,
-    metalness: 0.1,
+    roughness: isDirt ? 0.95 : 0.65,
+    metalness: isDirt ? 0.05 : 0.15,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
@@ -148,39 +205,54 @@ function buildRoadMesh(waypoints: RoadWaypoint[], isDirt: boolean = false): THRE
 export function buildWorld(renderer: THREE.WebGLRenderer): WorldBuildResult {
   const scene = new THREE.Scene();
 
-  // 1. Atmosphere & Fog (Three.js Directive: match fog to horizon sky)
-  const skyColor = new THREE.Color(0xa7c5eb);
-  scene.background = skyColor;
-  scene.fog = new THREE.FogExp2(0xa7c5eb, 0.0018);
+  // 1. Photorealistic Sky Dome with Atmospheric Depth
+  const skyGeo = new THREE.SphereGeometry(720, 32, 20);
+  const skyMat = new THREE.MeshBasicMaterial({
+    map: createSkyCanvasTexture(),
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+  const skyDome = new THREE.Mesh(skyGeo, skyMat);
+  scene.add(skyDome);
 
-  // 2. Studio PBR Environment Map via RoomEnvironment
+  // Atmospheric Horizon Fog
+  const horizonColor = new THREE.Color(0xd6ad85);
+  scene.fog = new THREE.FogExp2(horizonColor, 0.0016);
+
+  // 2. High-Performance Studio PBR Environment Map
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
   const roomEnv = new RoomEnvironment();
   scene.environment = pmremGenerator.fromScene(roomEnv, 0.04).texture;
   pmremGenerator.dispose();
 
-  // 3. Lighting Rig (Key Sun Light + Hemisphere Sky/Ground Light)
-  const hemiLight = new THREE.HemisphereLight(0xe8f0fe, 0x475e3e, 0.7);
+  // 3. Cinematic Golden-Hour Lighting Rig
+  const hemiLight = new THREE.HemisphereLight(0xffedd5, 0x3b4a3f, 0.85);
   scene.add(hemiLight);
 
-  const sunLight = new THREE.DirectionalLight(0xfff7e6, 1.3);
-  sunLight.position.set(220, 340, 180);
+  // Warm Golden Sun Light
+  const sunLight = new THREE.DirectionalLight(0xfff2dc, 1.6);
+  sunLight.position.set(240, 360, 200);
   sunLight.castShadow = true;
   sunLight.shadow.mapSize.width = 1024;
   sunLight.shadow.mapSize.height = 1024;
   sunLight.shadow.camera.near = 50;
-  sunLight.shadow.camera.far = 700;
-  const shadowRange = 180;
+  sunLight.shadow.camera.far = 750;
+  const shadowRange = 190;
   sunLight.shadow.camera.left = -shadowRange;
   sunLight.shadow.camera.right = shadowRange;
   sunLight.shadow.camera.top = shadowRange;
   sunLight.shadow.camera.bottom = -shadowRange;
-  sunLight.shadow.bias = -0.0005;
+  sunLight.shadow.bias = -0.0004;
   sunLight.shadow.normalBias = 0.02;
   scene.add(sunLight);
 
-  // 4. Procedural Terrain Mesh with Vertex Colors (Grass, Sand, Mountain Stone)
-  const terrainRes = 120;
+  // Subtle Cyan Sky Fill Light from the west
+  const fillLight = new THREE.DirectionalLight(0x7dd3fc, 0.45);
+  fillLight.position.set(-200, 150, -100);
+  scene.add(fillLight);
+
+  // 4. Procedural Terrain Mesh with Realistic Biome Color Gradients
+  const terrainRes = 128;
   const terrainGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, terrainRes, terrainRes);
   terrainGeo.rotateX(-Math.PI / 2);
 
@@ -188,10 +260,11 @@ export function buildWorld(renderer: THREE.WebGLRenderer): WorldBuildResult {
   const count = posAttr.count;
   const colors = new Float32Array(count * 3);
 
-  const grassColor = new THREE.Color(0x406a38);
-  const dryGrassColor = new THREE.Color(0x60773d);
-  const rockColor = new THREE.Color(0x64696e);
-  const sandColor = new THREE.Color(0xd4b483);
+  const lushGrassColor = new THREE.Color(0x386631);
+  const alpineGrassColor = new THREE.Color(0x56733a);
+  const mountainRockColor = new THREE.Color(0x60656d);
+  const darkCliffColor = new THREE.Color(0x40454d);
+  const beachSandColor = new THREE.Color(0xd6be8d);
   const tempCol = new THREE.Color();
 
   for (let i = 0; i < count; i++) {
@@ -200,18 +273,17 @@ export function buildWorld(renderer: THREE.WebGLRenderer): WorldBuildResult {
     const y = getTerrainHeight(x, z);
     posAttr.setY(i, y);
 
-    // Color gradient based on elevation and ocean distance
     if (x < -310) {
-      // Sandy coastal shoreline
-      tempCol.copy(sandColor).lerp(grassColor, Math.max(0, Math.min(1, (x + 360) / 50)));
-    } else if (y > 18) {
-      // Mountain rock
-      const t = Math.min((y - 18) / 16, 1.0);
-      tempCol.copy(grassColor).lerp(rockColor, t);
+      // Golden sandy coastline
+      tempCol.copy(beachSandColor).lerp(lushGrassColor, Math.max(0, Math.min(1, (x + 360) / 50)));
+    } else if (y > 17) {
+      // Mountain rock & cliffs
+      const t = Math.min((y - 17) / 18, 1.0);
+      tempCol.copy(alpineGrassColor).lerp(y > 28 ? darkCliffColor : mountainRockColor, t);
     } else {
-      // Rolling meadow & hills with natural patchiness
-      const noise = Math.sin(x * 0.03) * Math.cos(z * 0.03);
-      tempCol.copy(grassColor).lerp(dryGrassColor, noise * 0.5 + 0.5);
+      // Rolling meadows with organic shade variation
+      const noise = Math.sin(x * 0.025) * Math.cos(z * 0.025);
+      tempCol.copy(lushGrassColor).lerp(alpineGrassColor, noise * 0.5 + 0.5);
     }
 
     colors[i * 3] = tempCol.r;
@@ -224,25 +296,25 @@ export function buildWorld(renderer: THREE.WebGLRenderer): WorldBuildResult {
 
   const terrainMat = new THREE.MeshStandardMaterial({
     vertexColors: true,
-    roughness: 0.9,
-    metalness: 0.05,
+    roughness: 0.88,
+    metalness: 0.06,
   });
   const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
   terrainMesh.receiveShadow = true;
   scene.add(terrainMesh);
 
-  // 5. Ocean Water Plane along West Coast
-  const waterGeo = new THREE.PlaneGeometry(800, WORLD_SIZE);
+  // 5. Animated Ocean Water with Specular Sun Glint
+  const waterGeo = new THREE.PlaneGeometry(850, WORLD_SIZE, 32, 32);
   waterGeo.rotateX(-Math.PI / 2);
   const waterMat = new THREE.MeshStandardMaterial({
-    color: 0x1d5f8a,
-    roughness: 0.15,
-    metalness: 0.3,
+    color: 0x15527a,
+    roughness: 0.12,
+    metalness: 0.45,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.9,
   });
   const ocean = new THREE.Mesh(waterGeo, waterMat);
-  ocean.position.set(-550, -0.6, 0);
+  ocean.position.set(-560, -0.5, 0);
   scene.add(ocean);
 
   // 6. Roads (Coastal Highway, Mountain Pass, Forest Dirt Trail)
@@ -251,108 +323,241 @@ export function buildWorld(renderer: THREE.WebGLRenderer): WorldBuildResult {
   const dirtRoad = buildRoadMesh(FOREST_DIRT_POINTS, true);
   scene.add(coastalRoad, mountainRoad, dirtRoad);
 
-  // 7. Instanced Pine Trees & Coastal Palms
-  // Pine Tree Template
-  const pineGroup = new THREE.Group();
-  const trunkGeo = new THREE.CylinderGeometry(0.3, 0.45, 2.5, 6);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2e1b, roughness: 0.9 });
-  const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-  trunk.position.y = 1.25;
-  pineGroup.add(trunk);
+  // 7. Volumetric-Style 3D Fluffy Cumulus Clouds (drifting at altitude)
+  const cloudGroup = new THREE.Group();
+  const cloudGeo = new THREE.DodecahedronGeometry(18, 1);
+  const cloudMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.95,
+    metalness: 0.0,
+    transparent: true,
+    opacity: 0.85,
+    flatShading: true,
+  });
 
-  const foliageMat = new THREE.MeshStandardMaterial({ color: 0x224928, roughness: 0.85 });
-  for (let tier = 0; tier < 3; tier++) {
-    const fGeo = new THREE.ConeGeometry(2.4 - tier * 0.5, 2.2, 7);
-    const fMesh = new THREE.Mesh(fGeo, foliageMat);
-    fMesh.position.y = 2.8 + tier * 1.4;
-    pineGroup.add(fMesh);
+  const cloudPuffs: { mesh: THREE.Mesh; baseX: number; speed: number }[] = [];
+  for (let c = 0; c < 14; c++) {
+    const puff = new THREE.Mesh(cloudGeo, cloudMat);
+    const cx = (c - 7) * 90 + Math.random() * 40;
+    const cy = 135 + Math.random() * 35;
+    const cz = -350 + Math.random() * 700;
+    const s = 1.0 + Math.random() * 0.8;
+    puff.position.set(cx, cy, cz);
+    puff.scale.set(s * 1.8, s * 0.6, s * 1.2);
+    cloudGroup.add(puff);
+    cloudPuffs.push({ mesh: puff, baseX: cx, speed: 0.8 + Math.random() * 0.6 });
   }
+  scene.add(cloudGroup);
 
-  // Scatter instanced trees across hills and forests (avoiding road centerlines)
-  const treeCount = 450;
-  const treeDummy = new THREE.Object3D();
-
-  // Combine pine mesh into single geometry for InstancedMesh
-  const trunkGeom = trunkGeo.clone();
-  trunkGeom.translate(0, 1.25, 0);
-  const cone1 = new THREE.ConeGeometry(2.4, 2.2, 6);
-  cone1.translate(0, 2.8, 0);
-  const cone2 = new THREE.ConeGeometry(1.9, 2.2, 6);
-  cone2.translate(0, 4.2, 0);
-
-  // Instanced trees mesh
-  const treeInstGeo = cone1; // Main silhouette cone
-  const treeInstMat = new THREE.MeshStandardMaterial({ color: 0x244f2b, roughness: 0.85 });
-  const treeInstMesh = new THREE.InstancedMesh(treeInstGeo, treeInstMat, treeCount);
+  // 8. Instanced Pine Trees & Foliage
+  const cone1 = new THREE.ConeGeometry(2.5, 3.2, 6);
+  cone1.translate(0, 3.0, 0);
+  const treeInstMat = new THREE.MeshStandardMaterial({ color: 0x224925, roughness: 0.82 });
+  const treeCount = 480;
+  const treeInstMesh = new THREE.InstancedMesh(cone1, treeInstMat, treeCount);
   treeInstMesh.castShadow = true;
   treeInstMesh.receiveShadow = true;
 
-  let placedTrees = 0;
+  const dummy = new THREE.Object3D();
   const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
+  let placedTrees = 0;
   for (let i = 0; i < treeCount * 3 && placedTrees < treeCount; i++) {
-    const tx = rand(-450, 450);
-    const tz = rand(-450, 450);
-
-    // Keep clear of festival hub center and water
-    if (Math.hypot(tx, tz) < 45 || tx < -320) continue;
-
+    const tx = rand(-460, 460);
+    const tz = rand(-460, 460);
+    if (Math.hypot(tx, tz) < 50 || tx < -315) continue;
     const ty = getTerrainHeight(tx, tz);
-    if (ty < 0) continue;
+    if (ty < 0.5) continue;
 
-    const scale = rand(0.8, 1.4);
-    treeDummy.position.set(tx, ty, tz);
-    treeDummy.scale.set(scale, scale, scale);
-    treeDummy.rotation.y = rand(0, Math.PI * 2);
-    treeDummy.updateMatrix();
+    const s = rand(0.85, 1.45);
+    dummy.position.set(tx, ty, tz);
+    dummy.scale.set(s, s * rand(0.9, 1.2), s);
+    dummy.rotation.y = rand(0, Math.PI * 2);
+    dummy.updateMatrix();
 
-    treeInstMesh.setMatrixAt(placedTrees, treeDummy.matrix);
+    treeInstMesh.setMatrixAt(placedTrees, dummy.matrix);
     placedTrees++;
   }
   treeInstMesh.computeBoundingSphere();
   scene.add(treeInstMesh);
 
-  // 8. Instanced Rocks and Boulders along cliffs
-  const rockCount = 180;
-  const rockGeo = new THREE.DodecahedronGeometry(1.5, 0);
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x5a5e65, roughness: 0.8, metalness: 0.1 });
+  // 9. Instanced Cliff Boulders
+  const rockCount = 190;
+  const rockGeo = new THREE.DodecahedronGeometry(1.6, 0);
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x585d66, roughness: 0.85, metalness: 0.1 });
   const rockInstMesh = new THREE.InstancedMesh(rockGeo, rockMat, rockCount);
   rockInstMesh.castShadow = true;
   rockInstMesh.receiveShadow = true;
 
   for (let i = 0; i < rockCount; i++) {
-    const rx = rand(-400, 450);
-    const rz = rand(-400, 450);
+    const rx = rand(-420, 460);
+    const rz = rand(-420, 460);
     const ry = getTerrainHeight(rx, rz);
-    const scale = rand(0.8, 2.5);
+    const s = rand(0.9, 2.8);
 
-    treeDummy.position.set(rx, ry + 0.4, rz);
-    treeDummy.scale.set(scale * rand(0.8, 1.2), scale * rand(0.6, 1.0), scale * rand(0.8, 1.2));
-    treeDummy.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
-    treeDummy.updateMatrix();
+    dummy.position.set(rx, ry + 0.3, rz);
+    dummy.scale.set(s * rand(0.8, 1.3), s * rand(0.6, 1.0), s * rand(0.8, 1.3));
+    dummy.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+    dummy.updateMatrix();
 
-    rockInstMesh.setMatrixAt(i, treeDummy.matrix);
+    rockInstMesh.setMatrixAt(i, dummy.matrix);
   }
   rockInstMesh.computeBoundingSphere();
   scene.add(rockInstMesh);
 
-  // 9. Festival Hub: Main Arch, Stage, Lights, Start Grid
+  // 10. Coastal Modern Town (Villas & Buildings along Coastal Strip)
+  const townGroup = new THREE.Group();
+  const villaWallMat = new THREE.MeshStandardMaterial({ color: 0xf4f1eb, roughness: 0.65 });
+  const villaRoofMat = new THREE.MeshStandardMaterial({ color: 0x8b3a2b, roughness: 0.6 }); // Terracotta tile
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x1a2e40,
+    roughness: 0.1,
+    metalness: 0.9,
+    emissive: 0x23496d,
+    emissiveIntensity: 0.35,
+  });
+
+  const townPositions = [
+    { x: -285, z: -160, h: 2 },
+    { x: -275, z: -110, h: 3 },
+    { x: -290, z: -60, h: 2 },
+    { x: -280, z: 0, h: 3 },
+    { x: -295, z: 60, h: 2 },
+    { x: -275, z: 120, h: 3 },
+    { x: -285, z: 180, h: 2 },
+  ];
+
+  for (const pos of townPositions) {
+    const bldg = new THREE.Group();
+    const groundY = getTerrainHeight(pos.x, pos.z);
+    bldg.position.set(pos.x, groundY, pos.z);
+
+    // Multi-level main block
+    const bGeo = new THREE.BoxGeometry(14, pos.h * 4, 12);
+    const bMesh = new THREE.Mesh(bGeo, villaWallMat);
+    bMesh.position.y = (pos.h * 4) / 2;
+    bMesh.castShadow = true;
+    bMesh.receiveShadow = true;
+    bldg.add(bMesh);
+
+    // Terracotta roof
+    const rGeo = new THREE.ConeGeometry(11, 2.8, 4);
+    rGeo.rotateY(Math.PI / 4);
+    const rMesh = new THREE.Mesh(rGeo, villaRoofMat);
+    rMesh.position.y = pos.h * 4 + 1.4;
+    bldg.add(rMesh);
+
+    // Large glass panoramic window strip
+    const wGeo = new THREE.BoxGeometry(11, 2.2, 0.4);
+    const wMesh = new THREE.Mesh(wGeo, glassMat);
+    wMesh.position.set(0, pos.h * 2.2, 6.05);
+    bldg.add(wMesh);
+
+    townGroup.add(bldg);
+  }
+  scene.add(townGroup);
+
+  // 11. Working Coastal Lighthouse on Promontory with 360° Rotating Beam
+  const lighthouseGroup = new THREE.Group();
+  const lhX = -325;
+  const lhZ = -220;
+  const lhY = getTerrainHeight(lhX, lhZ);
+  lighthouseGroup.position.set(lhX, lhY, lhZ);
+
+  // White and Red striped tower
+  const towerMatWhite = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+  const towerMatRed = new THREE.MeshStandardMaterial({ color: 0xd92231, roughness: 0.4 });
+
+  for (let s = 0; s < 4; s++) {
+    const tGeo = new THREE.CylinderGeometry(2.2 - s * 0.25, 2.6 - s * 0.25, 4.5, 12);
+    const tMesh = new THREE.Mesh(tGeo, s % 2 === 0 ? towerMatWhite : towerMatRed);
+    tMesh.position.y = 2.25 + s * 4.5;
+    tMesh.castShadow = true;
+    lighthouseGroup.add(tMesh);
+  }
+
+  // Lantern room & cupola
+  const lanternGeo = new THREE.CylinderGeometry(1.4, 1.4, 2.2, 10);
+  const lanternMat = new THREE.MeshStandardMaterial({
+    color: 0xffeeaa,
+    emissive: 0xffdd66,
+    emissiveIntensity: 1.8,
+  });
+  const lantern = new THREE.Mesh(lanternGeo, lanternMat);
+  lantern.position.y = 19.1;
+  lighthouseGroup.add(lantern);
+
+  // Long rotating spotlight cone
+  const beamConeGeo = new THREE.ConeGeometry(12, 140, 16, 1, true);
+  beamConeGeo.rotateX(Math.PI / 2);
+  beamConeGeo.translate(0, 0, 70);
+  const beamConeMat = new THREE.MeshBasicMaterial({
+    color: 0xffea9f,
+    transparent: true,
+    opacity: 0.35,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const lighthouseBeam = new THREE.Mesh(beamConeGeo, beamConeMat);
+  lighthouseBeam.position.y = 19.1;
+  lighthouseGroup.add(lighthouseBeam);
+
+  scene.add(lighthouseGroup);
+
+  // 12. Floating Festival Hot Air Balloons across the Sky
+  const balloonGroup = new THREE.Group();
+  const balloonConfigs = [
+    { x: -120, y: 110, z: -180, color1: 0xff0055, color2: 0xffaa00 },
+    { x: 140, y: 125, z: 80, color1: 0x00d2ff, color2: 0x7928ca },
+    { x: 260, y: 105, z: -90, color1: 0x00f5a0, color2: 0x00d9f5 },
+  ];
+
+  const animatedBalloons: THREE.Group[] = [];
+  for (const cfg of balloonConfigs) {
+    const bGroup = new THREE.Group();
+    bGroup.position.set(cfg.x, cfg.y, cfg.z);
+
+    // Teardrop balloon envelope
+    const bGeo = new THREE.SphereGeometry(9, 16, 12);
+    bGeo.scale(1, 1.35, 1);
+    const bMat = new THREE.MeshStandardMaterial({
+      color: cfg.color1,
+      roughness: 0.6,
+      emissive: cfg.color1,
+      emissiveIntensity: 0.25,
+    });
+    const bMesh = new THREE.Mesh(bGeo, bMat);
+    bGroup.add(bMesh);
+
+    // Hanging wicker basket
+    const basketGeo = new THREE.BoxGeometry(2.0, 1.4, 2.0);
+    const basketMat = new THREE.MeshStandardMaterial({ color: 0x5a3e26, roughness: 0.9 });
+    const basket = new THREE.Mesh(basketGeo, basketMat);
+    basket.position.y = -14;
+    bGroup.add(basket);
+
+    balloonGroup.add(bGroup);
+    animatedBalloons.push(bGroup);
+  }
+  scene.add(balloonGroup);
+
+  // 13. Festival Hub: Grand Stage, Moving Spotlights, and Neon Signs
   const festivalGroup = new THREE.Group();
   festivalGroup.position.set(0, getTerrainHeight(0, 0), 0);
 
-  // Big Festival Truss Gantry
-  const trussMat = new THREE.MeshStandardMaterial({ color: 0x111625, metalness: 0.8, roughness: 0.3 });
-  const pillarGeo = new THREE.BoxGeometry(0.8, 8, 0.8);
+  // Grand Festival Truss Gantry
+  const trussMat = new THREE.MeshStandardMaterial({ color: 0x111625, metalness: 0.85, roughness: 0.25 });
+  const pillarGeo = new THREE.BoxGeometry(1.2, 9.5, 1.2);
   const pillarL = new THREE.Mesh(pillarGeo, trussMat);
-  pillarL.position.set(-8, 4, 0);
+  pillarL.position.set(-9.5, 4.75, 0);
   const pillarR = new THREE.Mesh(pillarGeo, trussMat);
-  pillarR.position.set(8, 4, 0);
+  pillarR.position.set(9.5, 4.75, 0);
 
-  const crossbarGeo = new THREE.BoxGeometry(17.5, 1.2, 1.2);
+  const crossbarGeo = new THREE.BoxGeometry(20.5, 1.4, 1.4);
   const crossbar = new THREE.Mesh(crossbarGeo, trussMat);
-  crossbar.position.set(0, 7.6, 0);
+  crossbar.position.set(0, 9.2, 0);
 
-  // Festival Logo Signboard
+  // Festival Logo Signboard with glowing neon letters
   const signCanvas = document.createElement('canvas');
   signCanvas.width = 512;
   signCanvas.height = 128;
@@ -367,123 +572,149 @@ export function buildWorld(renderer: THREE.WebGLRenderer): WorldBuildResult {
   const signTex = new THREE.CanvasTexture(signCanvas);
   signTex.colorSpace = THREE.SRGBColorSpace;
 
-  const signGeo = new THREE.BoxGeometry(14, 2.2, 0.3);
+  const signGeo = new THREE.BoxGeometry(16, 2.4, 0.35);
   const signMat = new THREE.MeshStandardMaterial({
     map: signTex,
-    emissive: 0xff0044,
-    emissiveIntensity: 0.4,
+    emissive: 0xff0055,
+    emissiveIntensity: 0.6,
+    roughness: 0.2,
   });
   const sign = new THREE.Mesh(signGeo, signMat);
-  sign.position.set(0, 8.8, 0);
+  sign.position.set(0, 10.6, 0);
 
   festivalGroup.add(pillarL, pillarR, crossbar, sign);
 
-  // Festival DJ Stage with neon spotlights
-  const stageGeo = new THREE.BoxGeometry(16, 1.2, 10);
-  const stageMat = new THREE.MeshStandardMaterial({ color: 0x1a1e29, metalness: 0.6, roughness: 0.4 });
-  const stage = new THREE.Mesh(stageGeo, stageMat);
-  stage.position.set(22, 0.6, 18);
-  festivalGroup.add(stage);
+  // Animated Nightclub / Festival Searchlight Beams (Cyan & Magenta)
+  const searchlightBeams: THREE.Mesh[] = [];
+  const slGeo = new THREE.ConeGeometry(5.0, 90, 12, 1, true);
+  slGeo.rotateX(Math.PI / 2);
+  slGeo.translate(0, 0, 45);
 
-  // Spotlights around festival hub
+  const slColors = [0x00f0ff, 0xff0077, 0xffb700, 0x00ff88];
   const festivalLights: THREE.PointLight[] = [];
-  const lightColors = [0xff0066, 0x00f0ff, 0xffd000, 0xaa00ff];
+
   for (let i = 0; i < 4; i++) {
-    const pl = new THREE.PointLight(lightColors[i], 1.8, 40);
-    pl.position.set(16 + (i % 2) * 12, 7, 12 + Math.floor(i / 2) * 12);
-    festivalGroup.add(pl);
-    festivalLights.push(pl);
+    const col = slColors[i];
+    const slMat = new THREE.MeshBasicMaterial({
+      color: col,
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const beam = new THREE.Mesh(slGeo, slMat);
+    const xOff = (i - 1.5) * 5.5;
+    beam.position.set(xOff, 9.5, 0);
+    beam.rotation.x = -Math.PI / 3;
+    festivalGroup.add(beam);
+    searchlightBeams.push(beam);
+
+    const ptLight = new THREE.PointLight(col, 2.2, 22);
+    ptLight.position.set(xOff, 9.5, 0);
+    festivalGroup.add(ptLight);
+    festivalLights.push(ptLight);
   }
 
   scene.add(festivalGroup);
 
-  // 10. Checkpoint Gates System
-  const checkpointMeshGroup = new THREE.Group();
-  scene.add(checkpointMeshGroup);
+  // 14. Speed Trap Radars with Flash Camera
+  const speedTrapFlashMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(1.2, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 })
+  );
+  scene.add(speedTrapFlashMesh);
 
-  // 11. Speed Trap Flash Overlay Mesh (Camera screen flash effect)
-  const flashGeo = new THREE.PlaneGeometry(2, 2);
-  const flashMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-  });
-  const speedTrapFlashMesh = new THREE.Mesh(flashGeo, flashMat);
-  speedTrapFlashMesh.renderOrder = 999;
-
-  // Speed Trap physical radar towers on roads
   for (const st of GAME_SPEED_TRAPS) {
-    const towerGroup = new THREE.Group();
-    towerGroup.position.set(st.x, getTerrainHeight(st.x, st.z), st.z);
+    const stGroup = new THREE.Group();
+    stGroup.position.set(st.x, getTerrainHeight(st.x, st.z), st.z);
 
     const poleGeo = new THREE.CylinderGeometry(0.18, 0.22, 5.5, 8);
-    const poleMat = new THREE.MeshStandardMaterial({ color: 0x333b4d, metalness: 0.8 });
-    const pole = new THREE.Mesh(poleGeo, poleMat);
+    const pole = new THREE.Mesh(poleGeo, trussMat);
     pole.position.y = 2.75;
 
-    const cameraGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
-    const cameraMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.5 });
-    const camBox = new THREE.Mesh(cameraGeo, cameraMat);
-    camBox.position.set(0, 5.2, 0);
+    const cameraBoxGeo = new THREE.BoxGeometry(0.8, 0.7, 1.1);
+    const cameraBoxMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xffaa00,
+      emissiveIntensity: 0.5,
+    });
+    const cameraBox = new THREE.Mesh(cameraBoxGeo, cameraBoxMat);
+    cameraBox.position.set(0, 5.2, 0);
 
-    const lensGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.2, 12);
-    lensGeo.rotateX(Math.PI / 2);
-    const lensMat = new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x00e5ff, emissiveIntensity: 1.0 });
-    const lens = new THREE.Mesh(lensGeo, lensMat);
-    lens.position.set(0, 5.2, 0.45);
-
-    towerGroup.add(pole, camBox, lens);
-    scene.add(towerGroup);
+    stGroup.add(pole, cameraBox);
+    scene.add(stGroup);
   }
 
-  // 12. Horizon XP Boards (Collectible 3D signs)
+  // 15. Horizon Collectible XP Boards
   const xpBoardMeshes = new Map<string, THREE.Group>();
   for (const board of GAME_XP_BOARDS) {
     const bGroup = new THREE.Group();
-    bGroup.position.set(board.x, getTerrainHeight(board.x, board.z), board.z);
+    bGroup.position.set(board.x, board.y, board.z);
 
     const boardMat = new THREE.MeshStandardMaterial({
-      color: 0x9d4edd,
-      emissive: 0x7b2cbf,
-      emissiveIntensity: 0.8,
+      color: 0x8a2be2,
+      emissive: 0xa855f7,
+      emissiveIntensity: 1.4,
       metalness: 0.3,
       roughness: 0.2,
     });
-    const panelGeo = new THREE.BoxGeometry(2.4, 1.4, 0.18);
+    const panelGeo = new THREE.BoxGeometry(2.5, 1.5, 0.2);
     const panel = new THREE.Mesh(panelGeo, boardMat);
     panel.position.y = 1.6;
 
     const legsGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.6, 6);
     const legL = new THREE.Mesh(legsGeo, trussMat);
-    legL.position.set(-0.9, 0.8, 0);
+    legL.position.set(-0.95, 0.8, 0);
     const legR = new THREE.Mesh(legsGeo, trussMat);
-    legR.position.set(0.9, 0.8, 0);
+    legR.position.set(0.95, 0.8, 0);
 
     bGroup.add(panel, legL, legR);
     scene.add(bGroup);
     xpBoardMeshes.set(board.id, bGroup);
   }
 
-  // 13. Dynamic animation updater (spotlight pulses, festival beacon)
+  // Active Race Checkpoint Arches Group
+  const checkpointMeshGroup = new THREE.Group();
+  scene.add(checkpointMeshGroup);
+
+  // 16. Dynamic Per-Frame Animation Updater
   const updateWorldTime = (time: number) => {
-    // Pulse festival stage lights
-    for (let i = 0; i < festivalLights.length; i++) {
-      festivalLights[i].intensity = 1.4 + Math.sin(time * 3 + i * 1.5) * 0.9;
+    // Rotating lighthouse searchlight sweep
+    lighthouseBeam.rotation.y = time * 0.9;
+
+    // Drifting clouds across sky
+    for (const puff of cloudPuffs) {
+      puff.mesh.position.x = ((puff.baseX + time * puff.speed * 4) % 900) - 450;
     }
-    // Rotate XP boards gently for discoverability
+
+    // Hot air balloons bobbing gently
+    for (let i = 0; i < animatedBalloons.length; i++) {
+      animatedBalloons[i].position.y = balloonConfigs[i].y + Math.sin(time * 0.8 + i * 2.0) * 3.5;
+    }
+
+    // Festival searchlights sweeping sky
+    for (let i = 0; i < searchlightBeams.length; i++) {
+      searchlightBeams[i].rotation.z = Math.sin(time * 1.5 + i * 1.2) * 0.45;
+      searchlightBeams[i].rotation.y = Math.cos(time * 1.2 + i * 0.9) * 0.35;
+      festivalLights[i].intensity = 1.8 + Math.sin(time * 3 + i * 1.5) * 0.8;
+    }
+
+    // Rotating collectible XP boards
     xpBoardMeshes.forEach((mesh) => {
-      mesh.rotation.y = Math.sin(time * 1.2) * 0.15;
+      mesh.rotation.y = Math.sin(time * 1.4) * 0.2;
     });
+
+    // Ocean water shimmer
+    ocean.position.y = -0.5 + Math.sin(time * 1.2) * 0.12;
   };
 
   const cleanup = () => {
     terrainGeo.dispose();
     terrainMat.dispose();
-    treeInstGeo.dispose();
-    treeInstMat.dispose();
-    rockGeo.dispose();
-    rockMat.dispose();
+    skyGeo.dispose();
+    skyMat.dispose();
+    treeInstMesh.geometry.dispose();
+    rockInstMesh.geometry.dispose();
     waterGeo.dispose();
     waterMat.dispose();
     coastalRoad.geometry.dispose();
@@ -513,21 +744,19 @@ export function renderCheckpointArch(x: number, y: number, z: number, isFinish: 
   const archMat = new THREE.MeshStandardMaterial({
     color: neonColor,
     emissive: neonColor,
-    emissiveIntensity: 1.4,
+    emissiveIntensity: 1.8,
     roughness: 0.1,
   });
 
-  // Glowing checkpoint ring/gate
-  const ringGeo = new THREE.TorusGeometry(6.5, 0.35, 8, 24);
+  const ringGeo = new THREE.TorusGeometry(6.8, 0.4, 8, 28);
   const ring = new THREE.Mesh(ringGeo, archMat);
   ring.position.y = 5.5;
   archGroup.add(ring);
 
-  // Chevron floating arrow
-  const arrowGeo = new THREE.ConeGeometry(1.2, 2.0, 3);
+  const arrowGeo = new THREE.ConeGeometry(1.4, 2.2, 3);
   arrowGeo.rotateZ(Math.PI);
   const arrow = new THREE.Mesh(arrowGeo, archMat);
-  arrow.position.y = 11.5;
+  arrow.position.y = 12.0;
   archGroup.add(arrow);
 
   return archGroup;

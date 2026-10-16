@@ -116,5 +116,9 @@ export class ChaseCamera {
     // Apply to camera
     this.camera.position.copy(this.currentPosition).add(this.shakeOffset);
     this.camera.lookAt(this.currentTarget);
+
+    // Subtle dynamic camera bank into high-g corners
+    const targetBank = -carState.steeringAngle * 0.05 * speedRatio;
+    this.camera.rotation.z += targetBank;
   }
 }

@@ -1,11 +1,8 @@
 /**
  * HORIZON: OPEN ROADS - Touch Controls Overlay
  * Highly robust multi-touch mobile driving controls.
- * - Global window-level pointer & touch release listeners to prevent stuck inputs
- * - Supports seamless simultaneous multi-touch (gas + brake + steering + handbrake)
- * - Dynamic responsive layout for Landscape vs Portrait to prevent button overlap
- * - Virtual Analog Steering Wheel OR Digital Left/Right Directional Buttons
- * - Keyboard bindings for desktop testing
+ * Guarantees zero cross-cancellation: Holding Gas while tapping Steering
+ * will NEVER cut power or drop speed. True multi-finger simultaneous control.
  */
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
@@ -44,13 +41,14 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     reverse: false,
   });
 
-  // Track pointers: pointerId -> ControlAction
-  const activePointers = useRef<Map<number, ControlAction>>(new Map());
+  // Independent pressed states (tracked per pointer to completely isolate buttons)
+  const gasPointers = useRef<Set<number>>(new Set());
+  const brakePointers = useRef<Set<number>>(new Set());
+  const handbrakePointers = useRef<Set<number>>(new Set());
+  const leftPointers = useRef<Set<number>>(new Set());
+  const rightPointers = useRef<Set<number>>(new Set());
 
-  // Set of actively held steering buttons for smooth multi-finger transitions
-  const activeSteerSet = useRef<Set<'left' | 'right'>>(new Set());
-
-  // Visual button states
+  // Visual states
   const [activeSteerDir, setActiveSteerDir] = useState<'left' | 'right' | null>(null);
   const [isGasPressed, setIsGasPressed] = useState(false);
   const [isBrakePressed, setIsBrakePressed] = useState(false);
@@ -67,16 +65,16 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     onInputChange({ ...currentInput.current });
   }, [onInputChange]);
 
-  // Recalculate steering input based on currently held steering buttons
-  const updateSteeringFromSet = useCallback(() => {
-    if (activeSteerSet.current.has('left') && activeSteerSet.current.has('right')) {
-      // Both held: neutral
+  const updateSteering = useCallback(() => {
+    const isLeft = leftPointers.current.size > 0;
+    const isRight = rightPointers.current.size > 0;
+    if (isLeft && isRight) {
       currentInput.current.steering = 0;
       setActiveSteerDir(null);
-    } else if (activeSteerSet.current.has('left')) {
+    } else if (isLeft) {
       currentInput.current.steering = -1.0;
       setActiveSteerDir('left');
-    } else if (activeSteerSet.current.has('right')) {
+    } else if (isRight) {
       currentInput.current.steering = 1.0;
       setActiveSteerDir('right');
     } else {
@@ -86,32 +84,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     dispatchInput();
   }, [dispatchInput]);
 
-  // Release a specific action safely
-  const releaseAction = useCallback(
-    (action: ControlAction) => {
-      if (action === 'gas') {
-        currentInput.current.throttle = 0;
-        setIsGasPressed(false);
-        dispatchInput();
-      } else if (action === 'brake') {
-        currentInput.current.brake = 0;
-        setIsBrakePressed(false);
-        dispatchInput();
-      } else if (action === 'handbrake') {
-        currentInput.current.handbrake = false;
-        setIsHandbrakePressed(false);
-        dispatchInput();
-      } else if (action === 'left' || action === 'right') {
-        activeSteerSet.current.delete(action);
-        updateSteeringFromSet();
-      }
-    },
-    [dispatchInput, updateSteeringFromSet]
-  );
-
-  // Global window pointerup & pointercancel listeners - GUARANTEES no stuck controls
+  // Global window pointer release (only releases the specific pointer that lifted)
   useEffect(() => {
-    const handleGlobalPointerRelease = (e: PointerEvent) => {
+    const handleGlobalPointerUp = (e: PointerEvent) => {
       // Check wheel
       if (wheelPointerId.current === e.pointerId) {
         wheelPointerId.current = null;
@@ -120,18 +95,54 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
         dispatchInput();
       }
 
-      // Check button pointers
-      if (activePointers.current.has(e.pointerId)) {
-        const action = activePointers.current.get(e.pointerId)!;
-        activePointers.current.delete(e.pointerId);
-        releaseAction(action);
+      // Check gas
+      if (gasPointers.current.has(e.pointerId)) {
+        gasPointers.current.delete(e.pointerId);
+        if (gasPointers.current.size === 0) {
+          currentInput.current.throttle = 0;
+          setIsGasPressed(false);
+          dispatchInput();
+        }
+      }
+
+      // Check brake
+      if (brakePointers.current.has(e.pointerId)) {
+        brakePointers.current.delete(e.pointerId);
+        if (brakePointers.current.size === 0) {
+          currentInput.current.brake = 0;
+          setIsBrakePressed(false);
+          dispatchInput();
+        }
+      }
+
+      // Check handbrake
+      if (handbrakePointers.current.has(e.pointerId)) {
+        handbrakePointers.current.delete(e.pointerId);
+        if (handbrakePointers.current.size === 0) {
+          currentInput.current.handbrake = false;
+          setIsHandbrakePressed(false);
+          dispatchInput();
+        }
+      }
+
+      // Check left / right
+      if (leftPointers.current.has(e.pointerId)) {
+        leftPointers.current.delete(e.pointerId);
+        updateSteering();
+      }
+      if (rightPointers.current.has(e.pointerId)) {
+        rightPointers.current.delete(e.pointerId);
+        updateSteering();
       }
     };
 
     const handleWindowBlur = () => {
-      // Window lost focus: release all controls completely
-      activePointers.current.clear();
-      activeSteerSet.current.clear();
+      // Window genuinely lost focus (tab switched)
+      gasPointers.current.clear();
+      brakePointers.current.clear();
+      handbrakePointers.current.clear();
+      leftPointers.current.clear();
+      rightPointers.current.clear();
       wheelPointerId.current = null;
       setWheelRotationDeg(0);
       currentInput.current.throttle = 0;
@@ -145,20 +156,16 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
       dispatchInput();
     };
 
-    window.addEventListener('pointerup', handleGlobalPointerRelease);
-    window.addEventListener('pointercancel', handleGlobalPointerRelease);
-    window.addEventListener('touchend', handleWindowBlur);
-    window.addEventListener('touchcancel', handleWindowBlur);
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerUp);
     window.addEventListener('blur', handleWindowBlur);
 
     return () => {
-      window.removeEventListener('pointerup', handleGlobalPointerRelease);
-      window.removeEventListener('pointercancel', handleGlobalPointerRelease);
-      window.removeEventListener('touchend', handleWindowBlur);
-      window.removeEventListener('touchcancel', handleWindowBlur);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerUp);
       window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [dispatchInput, releaseAction]);
+  }, [dispatchInput, updateSteering]);
 
   // Keyboard controls for desktop testing
   useEffect(() => {
@@ -226,50 +233,123 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     };
   }, [dispatchInput, onToggleCamera, onResetCar, onPause]);
 
-  // Touch button down handler
-  const handleButtonDown = (action: ControlAction, e: React.PointerEvent<HTMLElement>) => {
+  // Specific Action Handlers - Strictly isolated
+  const handleGasDown = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
-    // Try pointer capture safely
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {}
-
-    activePointers.current.set(e.pointerId, action);
-
-    if (action === 'gas') {
-      currentInput.current.throttle = 1.0;
-      setIsGasPressed(true);
-      dispatchInput();
-    } else if (action === 'brake') {
-      currentInput.current.brake = 1.0;
-      setIsBrakePressed(true);
-      dispatchInput();
-    } else if (action === 'handbrake') {
-      currentInput.current.handbrake = true;
-      setIsHandbrakePressed(true);
-      dispatchInput();
-    } else if (action === 'left' || action === 'right') {
-      activeSteerSet.current.add(action);
-      updateSteeringFromSet();
-    }
+    gasPointers.current.add(e.pointerId);
+    currentInput.current.throttle = 1.0;
+    setIsGasPressed(true);
+    dispatchInput();
   };
 
-  // Touch button up handler
-  const handleButtonUp = (e: React.PointerEvent<HTMLElement>) => {
+  const handleGasUp = (e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {}
-
-    const action = activePointers.current.get(e.pointerId);
-    if (action) {
-      activePointers.current.delete(e.pointerId);
-      releaseAction(action);
+    gasPointers.current.delete(e.pointerId);
+    if (gasPointers.current.size === 0) {
+      currentInput.current.throttle = 0;
+      setIsGasPressed(false);
+      dispatchInput();
     }
+  };
+
+  const handleBrakeDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+    brakePointers.current.add(e.pointerId);
+    currentInput.current.brake = 1.0;
+    setIsBrakePressed(true);
+    dispatchInput();
+  };
+
+  const handleBrakeUp = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    brakePointers.current.delete(e.pointerId);
+    if (brakePointers.current.size === 0) {
+      currentInput.current.brake = 0;
+      setIsBrakePressed(false);
+      dispatchInput();
+    }
+  };
+
+  const handleHandbrakeDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+    handbrakePointers.current.add(e.pointerId);
+    currentInput.current.handbrake = true;
+    setIsHandbrakePressed(true);
+    dispatchInput();
+  };
+
+  const handleHandbrakeUp = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    handbrakePointers.current.delete(e.pointerId);
+    if (handbrakePointers.current.size === 0) {
+      currentInput.current.handbrake = false;
+      setIsHandbrakePressed(false);
+      dispatchInput();
+    }
+  };
+
+  const handleLeftDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+    leftPointers.current.add(e.pointerId);
+    updateSteering();
+  };
+
+  const handleLeftUp = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    leftPointers.current.delete(e.pointerId);
+    updateSteering();
+  };
+
+  const handleRightDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+    rightPointers.current.add(e.pointerId);
+    updateSteering();
+  };
+
+  const handleRightUp = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    rightPointers.current.delete(e.pointerId);
+    updateSteering();
   };
 
   // Virtual Steering Wheel Handlers
@@ -404,9 +484,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
           /* Left / Right Steering Touch Buttons */
           <div className={`flex ${isPortrait ? 'space-x-2' : 'space-x-3'}`}>
             <button
-              onPointerDown={(e) => handleButtonDown('left', e)}
-              onPointerUp={handleButtonUp}
-              onPointerCancel={handleButtonUp}
+              onPointerDown={handleLeftDown}
+              onPointerUp={handleLeftUp}
+              onPointerCancel={handleLeftUp}
               className={`rounded-2xl sm:rounded-3xl border-2 flex items-center justify-center font-black select-none transition-all shadow-2xl active:scale-95 touch-none ${
                 isPortrait ? 'w-16 h-16 text-2xl' : 'w-20 h-20 text-3xl'
               } ${
@@ -419,9 +499,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
             </button>
 
             <button
-              onPointerDown={(e) => handleButtonDown('right', e)}
-              onPointerUp={handleButtonUp}
-              onPointerCancel={handleButtonUp}
+              onPointerDown={handleRightDown}
+              onPointerUp={handleRightUp}
+              onPointerCancel={handleRightUp}
               className={`rounded-2xl sm:rounded-3xl border-2 flex items-center justify-center font-black select-none transition-all shadow-2xl active:scale-95 touch-none ${
                 isPortrait ? 'w-16 h-16 text-2xl' : 'w-20 h-20 text-3xl'
               } ${
@@ -444,9 +524,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
       >
         {/* Drift / Handbrake Button */}
         <button
-          onPointerDown={(e) => handleButtonDown('handbrake', e)}
-          onPointerUp={handleButtonUp}
-          onPointerCancel={handleButtonUp}
+          onPointerDown={handleHandbrakeDown}
+          onPointerUp={handleHandbrakeUp}
+          onPointerCancel={handleHandbrakeUp}
           className={`rounded-2xl sm:rounded-3xl border-2 flex flex-col items-center justify-center font-bold select-none transition-all shadow-2xl active:scale-95 touch-none ${
             isPortrait ? 'w-13 h-14 mb-0.5' : 'w-18 h-18 mb-1'
           } ${
@@ -464,9 +544,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
 
         {/* Brake / Reverse Pedal */}
         <button
-          onPointerDown={(e) => handleButtonDown('brake', e)}
-          onPointerUp={handleButtonUp}
-          onPointerCancel={handleButtonUp}
+          onPointerDown={handleBrakeDown}
+          onPointerUp={handleBrakeUp}
+          onPointerCancel={handleBrakeUp}
           className={`rounded-2xl sm:rounded-3xl border-2 flex flex-col items-center justify-center font-black select-none transition-all shadow-2xl active:scale-95 touch-none ${
             isPortrait ? 'w-14 h-20' : 'w-20 h-26'
           } ${
@@ -483,9 +563,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
 
         {/* Throttle (Gas) Pedal */}
         <button
-          onPointerDown={(e) => handleButtonDown('gas', e)}
-          onPointerUp={handleButtonUp}
-          onPointerCancel={handleButtonUp}
+          onPointerDown={handleGasDown}
+          onPointerUp={handleGasUp}
+          onPointerCancel={handleGasUp}
           className={`rounded-2xl sm:rounded-3xl border-2 flex flex-col items-center justify-center font-black select-none transition-all shadow-2xl active:scale-95 touch-none ${
             isPortrait ? 'w-16 h-24' : 'w-22 h-34'
           } ${

@@ -56,6 +56,18 @@ export const DrivingHUD: React.FC<DrivingHUDProps> = ({
 
   return (
     <div className="absolute inset-0 pointer-events-none select-none overflow-hidden z-10 text-white font-sans">
+      {/* High-Speed Adrenaline Velocity Vignette (>160 km/h) */}
+      {speedKmh > 155 && (
+        <div
+          className="absolute inset-0 pointer-events-none transition-opacity duration-200"
+          style={{
+            opacity: Math.min((speedKmh - 155) / 110, 0.65),
+            background:
+              'radial-gradient(circle at center, transparent 50%, rgba(56, 189, 248, 0.08) 80%, rgba(2, 6, 23, 0.5) 100%)',
+          }}
+        />
+      )}
+
       {/* Top Left: FPS Counter (if enabled) & Horizon Branding */}
       <div className="absolute top-4 left-4 flex flex-col space-y-1">
         <div className="flex items-center space-x-2 bg-slate-950/80 px-3 py-1.5 rounded-lg border border-white/10">

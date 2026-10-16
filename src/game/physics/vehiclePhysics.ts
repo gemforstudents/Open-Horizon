@@ -158,49 +158,63 @@ export class VehiclePhysics {
     // 6. Drift & Lateral Traction
     const handbrakeActive = input.handbrake;
     const slipSpeed = Math.abs(lateralSpeed);
-    const isHighAngle = Math.abs(lateralSpeed) > 3.0 && currentSpeedMs > 8.0;
+    const isHighAngle = Math.abs(lateralSpeed) > 3.8 && currentSpeedMs > 10.0;
 
-    this.state.isDrifting = (handbrakeActive && currentSpeedMs > 5.0) || isHighAngle;
+    this.state.isDrifting = (handbrakeActive && currentSpeedMs > 6.0) || isHighAngle;
 
     // Lateral grip response
-    let lateralGrip = this.state.isDrifting ? 0.35 : (0.85 * gripMultiplier);
+    let lateralGrip = this.state.isDrifting ? 0.38 : (0.92 * gripMultiplier);
     if (handbrakeActive) {
-      lateralGrip *= 0.4;
+      lateralGrip *= 0.45;
     }
 
-    // Heading yaw turn rate
-    // Counter-steering while drifting keeps car controlled
+    // Heading yaw turn rate (Bicycle model approximation)
+    // Wheelbase ~ 2.7m. Turn rate is proportional to steer angle and speed, capped smoothly for stability.
     let yawTurnRate = 0;
-    if (Math.abs(forwardSpeed) > 0.5) {
+    if (Math.abs(forwardSpeed) > 0.3) {
       const directionSign = forwardSpeed >= 0 ? 1 : -1;
-      const turnRadiusFactor = this.currentSteerAngle * (currentSpeedMs / 5.5);
-      yawTurnRate = turnRadiusFactor * directionSign * (this.config.handling / 8.0);
+      // High-speed stability: turn radius expands naturally with speed
+      const effectiveSpeed = Math.min(Math.max(currentSpeedMs, 3.0), 45.0);
+      const baseTurnRate = (effectiveSpeed / 2.7) * Math.tan(this.currentSteerAngle);
+      yawTurnRate = baseTurnRate * directionSign * (this.config.handling / 9.0);
 
-      // Oversteer drift swing
+      // Oversteer swing when drifting
       if (this.state.isDrifting) {
         const driftSign = lateralSpeed > 0 ? 1 : -1;
-        yawTurnRate += driftSign * 0.45 * Math.min(slipSpeed / 10, 1.5);
+        yawTurnRate += driftSign * 0.4 * Math.min(slipSpeed / 10, 1.4);
       }
     }
 
-    this.state.heading += yawTurnRate * delta;
+    // Apply heading yaw change
+    const deltaHeading = yawTurnRate * delta;
+    this.state.heading += deltaHeading;
 
-    // 7. Velocity Integration with drag & lateral damping
-    const aeroDrag = 0.0012 * currentSpeedMs * currentSpeedMs;
-    const totalForwardAccel = engineAccel - (forwardSpeed > 0 ? (brakeDecel + rollingResistance * 9.8 + aeroDrag) : -aeroDrag);
+    // 7. Velocity Integration with Centripetal Momentum Preservation
+    // Normal turning grips road and rotates the velocity vector with the car (DO NOT kill speed!)
+    const aeroDrag = 0.0009 * currentSpeedMs * currentSpeedMs;
+    // Cornering tire scrub is slight (2-4%), NOT 50% speed loss!
+    const corneringScrub = !this.state.isDrifting ? Math.abs(this.currentSteerAngle) * 0.04 * (currentSpeedMs > 8 ? 1 : 0) : 0.08;
+    const totalForwardAccel = engineAccel - (forwardSpeed > 0 ? (brakeDecel + (rollingResistance + corneringScrub) * 9.8 + aeroDrag) : -aeroDrag);
 
-    // Accelerate along forward axis
+    // Integrate forward speed along chassis
     let newForwardSpeed = forwardSpeed + totalForwardAccel * delta;
     if (targetGear > 0 && newForwardSpeed < 0 && input.throttle > 0) {
       newForwardSpeed = 0;
     }
 
-    // Damp lateral sliding towards zero based on lateral grip
-    const newLateralSpeed = lateralSpeed * Math.exp(-lateralGrip * 7.5 * delta);
+    // When gripping, velocity vector turns with the chassis (centripetal motion)
+    // Lateral slip is gently damped out while forward momentum is preserved!
+    const newLateralSpeed = lateralSpeed * Math.exp(-lateralGrip * 6.0 * delta);
 
-    // Convert back to world velocity
-    this.state.vx = forwardX * newForwardSpeed + rightX * newLateralSpeed;
-    this.state.vz = forwardZ * newForwardSpeed + rightZ * newLateralSpeed;
+    // Compute updated forward/right vectors based on new heading
+    const newForwardX = Math.sin(this.state.heading);
+    const newForwardZ = Math.cos(this.state.heading);
+    const newRightX = Math.cos(this.state.heading);
+    const newRightZ = -Math.sin(this.state.heading);
+
+    // Reconstruct world velocity from updated axes to preserve momentum through turns
+    this.state.vx = newForwardX * newForwardSpeed + newRightX * newLateralSpeed;
+    this.state.vz = newForwardZ * newForwardSpeed + newRightZ * newLateralSpeed;
 
     // 8. Drift Scoring System
     if (this.state.isDrifting && this.state.speedKmh > 30) {
