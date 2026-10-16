@@ -1,32 +1,39 @@
 /**
  * HORIZON: OPEN ROADS - Touch Controls Overlay
  * Highly robust multi-touch mobile driving controls.
- * Prevents pointer capture errors, supports simultaneous multi-touch,
- * keyboard fallback, and in-game screen rotation toggle.
+ * - Global window-level pointer & touch release listeners to prevent stuck inputs
+ * - Supports seamless simultaneous multi-touch (gas + brake + steering + handbrake)
+ * - Dynamic responsive layout for Landscape vs Portrait to prevent button overlap
+ * - Virtual Analog Steering Wheel OR Digital Left/Right Directional Buttons
+ * - Keyboard bindings for desktop testing
  */
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { PlayerInput, ControlType } from '../types/game';
-import { RotateCcw, Video, Pause, Disc, RotateCw } from 'lucide-react';
+import { RotateCcw, Video, Pause, Disc, Maximize, Minimize, Smartphone } from 'lucide-react';
 
 interface TouchControlsProps {
   controlType: ControlType;
-  isScreenRotated: boolean;
+  isFullscreen?: boolean;
+  isPortrait?: boolean;
   onInputChange: (input: PlayerInput) => void;
   onResetCar: () => void;
   onToggleCamera: () => void;
   onPause: () => void;
-  onToggleRotateScreen: () => void;
+  onToggleFullscreen?: () => void;
 }
+
+type ControlAction = 'left' | 'right' | 'gas' | 'brake' | 'handbrake';
 
 export const TouchControls: React.FC<TouchControlsProps> = ({
   controlType,
-  isScreenRotated,
+  isFullscreen,
+  isPortrait = false,
   onInputChange,
   onResetCar,
   onToggleCamera,
   onPause,
-  onToggleRotateScreen,
+  onToggleFullscreen,
 }) => {
   // Stable mutable input state
   const currentInput = useRef<PlayerInput>({
@@ -37,17 +44,20 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     reverse: false,
   });
 
-  // Active touch pointer tracking map (pointerId -> action)
-  const activePointers = useRef<Map<number, string>>(new Map());
+  // Track pointers: pointerId -> ControlAction
+  const activePointers = useRef<Map<number, ControlAction>>(new Map());
 
-  // Visual state
+  // Set of actively held steering buttons for smooth multi-finger transitions
+  const activeSteerSet = useRef<Set<'left' | 'right'>>(new Set());
+
+  // Visual button states
   const [activeSteerDir, setActiveSteerDir] = useState<'left' | 'right' | null>(null);
   const [isGasPressed, setIsGasPressed] = useState(false);
   const [isBrakePressed, setIsBrakePressed] = useState(false);
   const [isHandbrakePressed, setIsHandbrakePressed] = useState(false);
   const [wheelRotationDeg, setWheelRotationDeg] = useState(0);
 
-  // Wheel refs
+  // Wheel tracking refs
   const wheelRef = useRef<HTMLDivElement>(null);
   const wheelPointerId = useRef<number | null>(null);
   const wheelCenter = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -57,7 +67,100 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     onInputChange({ ...currentInput.current });
   }, [onInputChange]);
 
-  // Keyboard controls with Set to guarantee zero dropped keystrokes
+  // Recalculate steering input based on currently held steering buttons
+  const updateSteeringFromSet = useCallback(() => {
+    if (activeSteerSet.current.has('left') && activeSteerSet.current.has('right')) {
+      // Both held: neutral
+      currentInput.current.steering = 0;
+      setActiveSteerDir(null);
+    } else if (activeSteerSet.current.has('left')) {
+      currentInput.current.steering = -1.0;
+      setActiveSteerDir('left');
+    } else if (activeSteerSet.current.has('right')) {
+      currentInput.current.steering = 1.0;
+      setActiveSteerDir('right');
+    } else {
+      currentInput.current.steering = 0;
+      setActiveSteerDir(null);
+    }
+    dispatchInput();
+  }, [dispatchInput]);
+
+  // Release a specific action safely
+  const releaseAction = useCallback(
+    (action: ControlAction) => {
+      if (action === 'gas') {
+        currentInput.current.throttle = 0;
+        setIsGasPressed(false);
+        dispatchInput();
+      } else if (action === 'brake') {
+        currentInput.current.brake = 0;
+        setIsBrakePressed(false);
+        dispatchInput();
+      } else if (action === 'handbrake') {
+        currentInput.current.handbrake = false;
+        setIsHandbrakePressed(false);
+        dispatchInput();
+      } else if (action === 'left' || action === 'right') {
+        activeSteerSet.current.delete(action);
+        updateSteeringFromSet();
+      }
+    },
+    [dispatchInput, updateSteeringFromSet]
+  );
+
+  // Global window pointerup & pointercancel listeners - GUARANTEES no stuck controls
+  useEffect(() => {
+    const handleGlobalPointerRelease = (e: PointerEvent) => {
+      // Check wheel
+      if (wheelPointerId.current === e.pointerId) {
+        wheelPointerId.current = null;
+        setWheelRotationDeg(0);
+        currentInput.current.steering = 0;
+        dispatchInput();
+      }
+
+      // Check button pointers
+      if (activePointers.current.has(e.pointerId)) {
+        const action = activePointers.current.get(e.pointerId)!;
+        activePointers.current.delete(e.pointerId);
+        releaseAction(action);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      // Window lost focus: release all controls completely
+      activePointers.current.clear();
+      activeSteerSet.current.clear();
+      wheelPointerId.current = null;
+      setWheelRotationDeg(0);
+      currentInput.current.throttle = 0;
+      currentInput.current.brake = 0;
+      currentInput.current.steering = 0;
+      currentInput.current.handbrake = false;
+      setIsGasPressed(false);
+      setIsBrakePressed(false);
+      setIsHandbrakePressed(false);
+      setActiveSteerDir(null);
+      dispatchInput();
+    };
+
+    window.addEventListener('pointerup', handleGlobalPointerRelease);
+    window.addEventListener('pointercancel', handleGlobalPointerRelease);
+    window.addEventListener('touchend', handleWindowBlur);
+    window.addEventListener('touchcancel', handleWindowBlur);
+    window.addEventListener('blur', handleWindowBlur);
+
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalPointerRelease);
+      window.removeEventListener('pointercancel', handleGlobalPointerRelease);
+      window.removeEventListener('touchend', handleWindowBlur);
+      window.removeEventListener('touchcancel', handleWindowBlur);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [dispatchInput, releaseAction]);
+
+  // Keyboard controls for desktop testing
   useEffect(() => {
     const keysDown = new Set<string>();
 
@@ -82,7 +185,6 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if user is inside an input or modifier keys are pressed
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
@@ -115,88 +217,59 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
       }
     };
 
-    const handleWindowBlur = () => {
-      keysDown.clear();
-      updateFromKeys();
-    };
-
     window.addEventListener('keydown', handleKeyDown, { passive: false });
     window.addEventListener('keyup', handleKeyUp, { passive: false });
-    window.addEventListener('blur', handleWindowBlur);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', handleWindowBlur);
     };
   }, [dispatchInput, onToggleCamera, onResetCar, onPause]);
 
-  // Safe pointer capture helper
-  const safeSetCapture = (el: HTMLElement, id: number) => {
-    try {
-      el.setPointerCapture(id);
-    } catch {}
-  };
-  const safeReleaseCapture = (el: HTMLElement, id: number) => {
-    try {
-      el.releasePointerCapture(id);
-    } catch {}
-  };
-
-  // Button Action Handlers
-  const handleButtonDown = (action: 'left' | 'right' | 'gas' | 'brake' | 'handbrake', e: React.PointerEvent<HTMLElement>) => {
+  // Touch button down handler
+  const handleButtonDown = (action: ControlAction, e: React.PointerEvent<HTMLElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    safeSetCapture(e.currentTarget, e.pointerId);
+
+    // Try pointer capture safely
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
+
     activePointers.current.set(e.pointerId, action);
 
     if (action === 'gas') {
       currentInput.current.throttle = 1.0;
       setIsGasPressed(true);
+      dispatchInput();
     } else if (action === 'brake') {
       currentInput.current.brake = 1.0;
       setIsBrakePressed(true);
-    } else if (action === 'left') {
-      currentInput.current.steering = -1.0;
-      setActiveSteerDir('left');
-    } else if (action === 'right') {
-      currentInput.current.steering = 1.0;
-      setActiveSteerDir('right');
+      dispatchInput();
     } else if (action === 'handbrake') {
       currentInput.current.handbrake = true;
       setIsHandbrakePressed(true);
+      dispatchInput();
+    } else if (action === 'left' || action === 'right') {
+      activeSteerSet.current.add(action);
+      updateSteeringFromSet();
     }
-
-    dispatchInput();
   };
 
+  // Touch button up handler
   const handleButtonUp = (e: React.PointerEvent<HTMLElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    safeReleaseCapture(e.currentTarget, e.pointerId);
+
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
 
     const action = activePointers.current.get(e.pointerId);
-    if (!action) return;
-    activePointers.current.delete(e.pointerId);
-
-    if (action === 'gas') {
-      currentInput.current.throttle = 0;
-      setIsGasPressed(false);
-    } else if (action === 'brake') {
-      currentInput.current.brake = 0;
-      setIsBrakePressed(false);
-    } else if (action === 'left') {
-      if (currentInput.current.steering < 0) currentInput.current.steering = 0;
-      setActiveSteerDir(null);
-    } else if (action === 'right') {
-      if (currentInput.current.steering > 0) currentInput.current.steering = 0;
-      setActiveSteerDir(null);
-    } else if (action === 'handbrake') {
-      currentInput.current.handbrake = false;
-      setIsHandbrakePressed(false);
+    if (action) {
+      activePointers.current.delete(e.pointerId);
+      releaseAction(action);
     }
-
-    dispatchInput();
   };
 
   // Virtual Steering Wheel Handlers
@@ -211,7 +284,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
       y: rect.top + rect.height / 2,
     };
     wheelPointerId.current = e.pointerId;
-    safeSetCapture(e.currentTarget, e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {}
     handleWheelMove(e);
   };
 
@@ -222,7 +297,6 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
     const dx = e.clientX - wheelCenter.current.x;
     const dy = e.clientY - wheelCenter.current.y;
 
-    // Angle calculation
     let angleDeg = Math.atan2(dx, -dy) * (180 / Math.PI);
     angleDeg = Math.max(-95, Math.min(95, angleDeg));
 
@@ -234,7 +308,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
   const handleWheelUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (wheelPointerId.current === e.pointerId) {
       e.preventDefault();
-      safeReleaseCapture(e.currentTarget, e.pointerId);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
       wheelPointerId.current = null;
       setWheelRotationDeg(0);
       currentInput.current.steering = 0;
@@ -243,52 +319,64 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
   };
 
   return (
-    <div className="absolute inset-0 pointer-events-none select-none overflow-hidden z-20">
+    <div className="absolute inset-0 pointer-events-none select-none overflow-hidden z-20 touch-none">
       {/* Top Action Bar Buttons */}
-      <div className="absolute top-4 right-4 flex items-center space-x-2.5 pointer-events-auto">
-        {/* Rotate Screen Button */}
-        <button
-          onClick={onToggleRotateScreen}
-          className={`w-12 h-12 rounded-2xl border flex items-center justify-center active:scale-95 transition-all shadow-xl backdrop-blur-none ${
-            isScreenRotated
-              ? 'bg-amber-500 border-amber-300 text-black shadow-amber-500/40'
-              : 'bg-slate-900/85 border-white/20 text-amber-400 hover:bg-slate-800'
-          }`}
-          title="Rotate Screen (Landscape Mode)"
-        >
-          <RotateCw className="w-6 h-6" />
-        </button>
+      <div className="absolute top-3 right-3 sm:top-4 sm:right-4 flex items-center space-x-2 pointer-events-auto">
+        {/* Fullscreen / Rotate Screen Toggle */}
+        {onToggleFullscreen && (
+          <button
+            onClick={onToggleFullscreen}
+            className={`w-11 h-11 sm:w-12 sm:h-12 rounded-2xl border flex items-center justify-center active:scale-95 transition-all shadow-xl ${
+              isFullscreen
+                ? 'bg-amber-500 border-amber-300 text-black shadow-amber-500/40'
+                : 'bg-slate-900/90 border-white/20 text-amber-400 hover:bg-slate-800'
+            }`}
+            title="Fullscreen / Rotate (F)"
+          >
+            {isFullscreen ? (
+              <Minimize className="w-5 h-5" />
+            ) : isPortrait ? (
+              <Smartphone className="w-5 h-5 rotate-90 text-amber-400 animate-pulse" />
+            ) : (
+              <Maximize className="w-5 h-5" />
+            )}
+          </button>
+        )}
 
         {/* Camera Toggle Button */}
         <button
           onClick={onToggleCamera}
-          className="w-12 h-12 rounded-2xl bg-slate-900/85 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all shadow-xl hover:bg-slate-800 active:bg-cyan-600"
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/90 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all shadow-xl hover:bg-slate-800"
           title="Change Camera View (C)"
         >
-          <Video className="w-6 h-6 text-cyan-400" />
+          <Video className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-400" />
         </button>
 
         {/* Car Reset / Recovery Button */}
         <button
           onClick={onResetCar}
-          className="w-12 h-12 rounded-2xl bg-slate-900/85 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all shadow-xl hover:bg-slate-800 active:bg-amber-600"
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/90 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all shadow-xl hover:bg-slate-800"
           title="Recover Car to Road (R)"
         >
-          <RotateCcw className="w-6 h-6 text-amber-400" />
+          <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400" />
         </button>
 
         {/* Pause Button */}
         <button
           onClick={onPause}
-          className="w-12 h-12 rounded-2xl bg-slate-900/85 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all shadow-xl hover:bg-slate-800 active:bg-rose-600"
+          className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-slate-900/90 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all shadow-xl hover:bg-slate-800"
           title="Pause Game (Esc)"
         >
-          <Pause className="w-6 h-6 text-white" />
+          <Pause className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
         </button>
       </div>
 
       {/* Bottom Left: Steering Controls */}
-      <div className="absolute bottom-6 left-6 pointer-events-auto">
+      <div
+        className={`absolute pointer-events-auto ${
+          isPortrait ? 'bottom-4 left-3' : 'bottom-6 left-6'
+        }`}
+      >
         {controlType === 'wheel' ? (
           /* Virtual Analog Steering Wheel */
           <div
@@ -297,25 +385,31 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
             onPointerMove={handleWheelMove}
             onPointerUp={handleWheelUp}
             onPointerCancel={handleWheelUp}
-            className="w-36 h-36 rounded-full bg-gradient-to-b from-slate-800/95 to-slate-950/95 border-4 border-slate-600/90 shadow-2xl flex items-center justify-center touch-none relative active:scale-[1.02] cursor-grab active:cursor-grabbing"
+            className={`rounded-full bg-gradient-to-b from-slate-800/95 to-slate-950/95 border-4 border-slate-600/90 shadow-2xl flex items-center justify-center touch-none relative active:scale-[1.02] cursor-grab ${
+              isPortrait ? 'w-28 h-28' : 'w-36 h-36'
+            }`}
             style={{
               transform: `rotate(${wheelRotationDeg}deg)`,
-              transition: wheelPointerId.current === null ? 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)' : 'none',
+              transition:
+                wheelPointerId.current === null
+                  ? 'transform 0.15s cubic-bezier(0.16, 1, 0.3, 1)'
+                  : 'none',
             }}
           >
-            {/* Wheel rim accent stripe */}
-            <div className="absolute top-1 w-5 h-3.5 bg-rose-500 rounded-sm shadow-md" />
-            <Disc className="w-16 h-16 text-slate-400 drop-shadow-md" />
-            <div className="absolute inset-x-3 top-1/2 -translate-y-1/2 h-4 bg-slate-700/80 rounded" />
+            <div className="absolute top-1 w-4 h-3 bg-rose-500 rounded-sm shadow-md" />
+            <Disc className={`text-slate-400 drop-shadow-md ${isPortrait ? 'w-12 h-12' : 'w-16 h-16'}`} />
+            <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 h-3.5 bg-slate-700/80 rounded" />
           </div>
         ) : (
           /* Left / Right Steering Touch Buttons */
-          <div className="flex space-x-3">
+          <div className={`flex ${isPortrait ? 'space-x-2' : 'space-x-3'}`}>
             <button
               onPointerDown={(e) => handleButtonDown('left', e)}
               onPointerUp={handleButtonUp}
               onPointerCancel={handleButtonUp}
-              className={`w-20 h-20 rounded-3xl border-2 flex items-center justify-center font-black text-3xl transition-all shadow-2xl active:scale-95 touch-none ${
+              className={`rounded-2xl sm:rounded-3xl border-2 flex items-center justify-center font-black select-none transition-all shadow-2xl active:scale-95 touch-none ${
+                isPortrait ? 'w-16 h-16 text-2xl' : 'w-20 h-20 text-3xl'
+              } ${
                 activeSteerDir === 'left'
                   ? 'bg-cyan-500 border-cyan-300 text-white shadow-cyan-500/60 scale-95 ring-4 ring-cyan-400/40'
                   : 'bg-slate-900/90 border-white/20 text-slate-200 hover:border-white/40'
@@ -328,7 +422,9 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
               onPointerDown={(e) => handleButtonDown('right', e)}
               onPointerUp={handleButtonUp}
               onPointerCancel={handleButtonUp}
-              className={`w-20 h-20 rounded-3xl border-2 flex items-center justify-center font-black text-3xl transition-all shadow-2xl active:scale-95 touch-none ${
+              className={`rounded-2xl sm:rounded-3xl border-2 flex items-center justify-center font-black select-none transition-all shadow-2xl active:scale-95 touch-none ${
+                isPortrait ? 'w-16 h-16 text-2xl' : 'w-20 h-20 text-3xl'
+              } ${
                 activeSteerDir === 'right'
                   ? 'bg-cyan-500 border-cyan-300 text-white shadow-cyan-500/60 scale-95 ring-4 ring-cyan-400/40'
                   : 'bg-slate-900/90 border-white/20 text-slate-200 hover:border-white/40'
@@ -341,21 +437,29 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
       </div>
 
       {/* Bottom Right: Handbrake & Pedals */}
-      <div className="absolute bottom-6 right-6 flex items-end space-x-3 pointer-events-auto">
-        {/* Drift / Handbrake Lever */}
+      <div
+        className={`absolute pointer-events-auto flex items-end ${
+          isPortrait ? 'bottom-4 right-3 space-x-2' : 'bottom-6 right-6 space-x-3'
+        }`}
+      >
+        {/* Drift / Handbrake Button */}
         <button
           onPointerDown={(e) => handleButtonDown('handbrake', e)}
           onPointerUp={handleButtonUp}
           onPointerCancel={handleButtonUp}
-          className={`w-18 h-18 rounded-3xl border-2 flex flex-col items-center justify-center font-bold transition-all shadow-2xl active:scale-95 touch-none mb-1 ${
+          className={`rounded-2xl sm:rounded-3xl border-2 flex flex-col items-center justify-center font-bold select-none transition-all shadow-2xl active:scale-95 touch-none ${
+            isPortrait ? 'w-13 h-14 mb-0.5' : 'w-18 h-18 mb-1'
+          } ${
             isHandbrakePressed
               ? 'bg-amber-400 border-amber-200 text-black shadow-amber-400/60 scale-95 ring-4 ring-amber-400/40'
               : 'bg-slate-900/90 border-amber-500/40 text-amber-400 hover:border-amber-400'
           }`}
           title="Handbrake Drift (Space)"
         >
-          <span className="text-base font-black tracking-tight">DRIFT</span>
-          <span className="text-[10px] opacity-75 font-semibold">HANDBRAKE</span>
+          <span className={`font-black tracking-tight ${isPortrait ? 'text-xs' : 'text-base'}`}>
+            DRIFT
+          </span>
+          {!isPortrait && <span className="text-[10px] opacity-75 font-semibold">HANDBRAKE</span>}
         </button>
 
         {/* Brake / Reverse Pedal */}
@@ -363,14 +467,18 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
           onPointerDown={(e) => handleButtonDown('brake', e)}
           onPointerUp={handleButtonUp}
           onPointerCancel={handleButtonUp}
-          className={`w-20 h-26 rounded-3xl border-2 flex flex-col items-center justify-center font-black transition-all shadow-2xl active:scale-95 touch-none ${
+          className={`rounded-2xl sm:rounded-3xl border-2 flex flex-col items-center justify-center font-black select-none transition-all shadow-2xl active:scale-95 touch-none ${
+            isPortrait ? 'w-14 h-20' : 'w-20 h-26'
+          } ${
             isBrakePressed
               ? 'bg-rose-600 border-rose-300 text-white shadow-rose-600/60 scale-95 ring-4 ring-rose-500/40'
               : 'bg-slate-900/90 border-rose-500/40 text-rose-400 hover:border-rose-400'
           }`}
         >
-          <span className="text-lg">BRAKE</span>
-          <span className="text-[10px] text-slate-400 font-semibold mt-0.5">REVERSE</span>
+          <span className={isPortrait ? 'text-sm' : 'text-lg'}>BRAKE</span>
+          <span className={`text-slate-400 font-semibold ${isPortrait ? 'text-[8px]' : 'text-[10px] mt-0.5'}`}>
+            REV
+          </span>
         </button>
 
         {/* Throttle (Gas) Pedal */}
@@ -378,15 +486,21 @@ export const TouchControls: React.FC<TouchControlsProps> = ({
           onPointerDown={(e) => handleButtonDown('gas', e)}
           onPointerUp={handleButtonUp}
           onPointerCancel={handleButtonUp}
-          className={`w-22 h-34 rounded-3xl border-2 flex flex-col items-center justify-center font-black transition-all shadow-2xl active:scale-95 touch-none ${
+          className={`rounded-2xl sm:rounded-3xl border-2 flex flex-col items-center justify-center font-black select-none transition-all shadow-2xl active:scale-95 touch-none ${
+            isPortrait ? 'w-16 h-24' : 'w-22 h-34'
+          } ${
             isGasPressed
               ? 'bg-emerald-500 border-emerald-300 text-black shadow-emerald-500/70 scale-95 ring-4 ring-emerald-400/40'
               : 'bg-gradient-to-b from-slate-900/95 to-slate-950/95 border-emerald-500/50 text-emerald-400 hover:border-emerald-400'
           }`}
         >
-          <span className="text-2xl tracking-tight">GAS</span>
-          <span className="text-[10px] text-emerald-300/80 font-bold uppercase tracking-widest mt-0.5">
-            THROTTLE
+          <span className={`tracking-tight ${isPortrait ? 'text-xl' : 'text-2xl'}`}>GAS</span>
+          <span
+            className={`text-emerald-300/80 font-bold uppercase tracking-widest ${
+              isPortrait ? 'text-[8px]' : 'text-[10px] mt-0.5'
+            }`}
+          >
+            GO
           </span>
         </button>
       </div>

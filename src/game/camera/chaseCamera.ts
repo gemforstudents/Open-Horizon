@@ -62,9 +62,11 @@ export class ChaseCamera {
         break;
     }
 
-    // High-speed FOV stretching (62 deg at rest -> 76 deg at high speed)
+    // High-speed FOV stretching (adapts smoothly for portrait and landscape)
+    const isPortrait = this.camera.aspect < 1.0;
+    const baseFov = isPortrait ? 76 : 62;
     const speedRatio = Math.min(carState.speedKmh / 280, 1.0);
-    const targetFov = 62 + speedRatio * 14;
+    const targetFov = baseFov + speedRatio * 14;
     this.camera.fov = THREE.MathUtils.damp(this.camera.fov, targetFov, 4.0, delta);
     this.camera.updateProjectionMatrix();
 

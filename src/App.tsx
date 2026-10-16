@@ -2,7 +2,7 @@
  * HORIZON: OPEN ROADS
  * Main Game Application Entry Point
  * Orchestrates Three.js rendering, physics simulation, AI opponents,
- * upgraded procedural sound synthesis, landscape orientation rotation, and responsive touch HUD.
+ * upgraded procedural sound synthesis, native fullscreen landscape support, and responsive touch HUD.
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -50,7 +50,6 @@ import { PauseModal } from './components/PauseModal';
 import { RaceResultsModal } from './components/RaceResultsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
-import { RotateCw } from 'lucide-react';
 
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -62,8 +61,8 @@ export default function App() {
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
 
-  // Orientation & Screen Rotation State
-  const [isScreenRotated, setIsScreenRotated] = useState<boolean>(false);
+  // Viewport Orientation & Native Fullscreen State
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isPortrait, setIsPortrait] = useState<boolean>(false);
 
   // Modals State
@@ -151,32 +150,92 @@ export default function App() {
   const lastPointerXRef = useRef<number>(0);
   const turntableAngleRef = useRef<number>(0);
 
-  // Auto-detect portrait orientation
-  useEffect(() => {
-    const checkOrientation = () => {
-      const portrait = window.innerHeight > window.innerWidth;
-      setIsPortrait(portrait);
-    };
-    checkOrientation();
-    window.addEventListener('resize', checkOrientation);
-    window.addEventListener('orientationchange', checkOrientation);
-    return () => {
-      window.removeEventListener('resize', checkOrientation);
-      window.removeEventListener('orientationchange', checkOrientation);
-    };
+  // Multi-stage Resize handler (guarantees Three.js fills 100% of viewport without half-screen glitch)
+  const handleResize = useCallback(() => {
+    if (!mountRef.current || !rendererRef.current || !cameraRef.current) return;
+    const width = mountRef.current.clientWidth || window.innerWidth || document.documentElement.clientWidth;
+    const height = mountRef.current.clientHeight || window.innerHeight || document.documentElement.clientHeight;
+    if (width > 0 && height > 0) {
+      cameraRef.current.camera.aspect = width / height;
+      cameraRef.current.camera.updateProjectionMatrix();
+      // updateStyle: false prevents Three.js from injecting inline pixel styles that clip on rotate
+      rendererRef.current.setSize(width, height, false);
+    }
   }, []);
 
-  // Screen rotation toggle handler
-  const handleToggleRotateScreen = useCallback(() => {
+  // Auto-detect portrait vs landscape orientation with multi-frame layout settlement
+  useEffect(() => {
+    const handleOrientation = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      setIsPortrait(portrait);
+      // Run immediately and across key layout animation frames to prevent partial-screen rendering
+      handleResize();
+      requestAnimationFrame(handleResize);
+      setTimeout(handleResize, 50);
+      setTimeout(handleResize, 150);
+      setTimeout(handleResize, 350);
+      setTimeout(handleResize, 600);
+    };
+
+    handleOrientation();
+    window.addEventListener('resize', handleOrientation);
+    window.addEventListener('orientationchange', handleOrientation);
+
+    let ro: ResizeObserver | null = null;
+    if (mountRef.current && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        handleResize();
+      });
+      ro.observe(mountRef.current);
+    }
+
+    return () => {
+      window.removeEventListener('resize', handleOrientation);
+      window.removeEventListener('orientationchange', handleOrientation);
+      ro?.disconnect();
+    };
+  }, [handleResize]);
+
+  // Fullscreen Landscape Toggle Handler (native, zero CSS clipping)
+  const handleToggleFullscreen = useCallback(async () => {
     audio.init();
     audio.playClick();
-    setIsScreenRotated((prev) => !prev);
     try {
-      if (typeof window !== 'undefined' && window.screen && 'orientation' in window.screen) {
-        (window.screen.orientation as any).lock('landscape').catch(() => {});
+      if (!document.fullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        } else if ((document.documentElement as any).webkitRequestFullscreen) {
+          await (document.documentElement as any).webkitRequestFullscreen();
+        }
+        if (typeof window !== 'undefined' && window.screen && 'orientation' in window.screen) {
+          (window.screen.orientation as any).lock('landscape').catch(() => {});
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
       }
     } catch {}
-  }, []);
+    handleResize();
+    requestAnimationFrame(handleResize);
+    setTimeout(handleResize, 100);
+    setTimeout(handleResize, 300);
+  }, [handleResize]);
+
+  // Track fullscreen changes
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+      handleResize();
+      setTimeout(handleResize, 100);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, [handleResize]);
 
   // Unlock Web Audio on first user gesture
   useEffect(() => {
@@ -241,22 +300,6 @@ export default function App() {
     [profile.vehiclePaints]
   );
 
-  // Resize handler considering rotated container
-  const handleResize = useCallback(() => {
-    if (!mountRef.current || !rendererRef.current || !cameraRef.current) return;
-    const width = mountRef.current.clientWidth;
-    const height = mountRef.current.clientHeight;
-    cameraRef.current.camera.aspect = width / height;
-    cameraRef.current.camera.updateProjectionMatrix();
-    rendererRef.current.setSize(width, height);
-  }, []);
-
-  // Trigger resize recalculation when isScreenRotated changes
-  useEffect(() => {
-    const timer = setTimeout(handleResize, 120);
-    return () => clearTimeout(timer);
-  }, [isScreenRotated, handleResize]);
-
   // Setup Three.js Scene and Game Loop
   useEffect(() => {
     const container = mountRef.current;
@@ -276,7 +319,7 @@ export default function App() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
-    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setSize(container.clientWidth, container.clientHeight, false);
     renderer.shadowMap.enabled = settings.graphicsQuality !== 'low';
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -284,6 +327,13 @@ export default function App() {
     if (settings.graphicsQuality === 'medium') pr = Math.min(window.devicePixelRatio, 1.3);
     if (settings.graphicsQuality === 'high') pr = Math.min(window.devicePixelRatio, 1.6);
     renderer.setPixelRatio(pr);
+
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.inset = '0';
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.touchAction = 'none';
 
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -364,6 +414,7 @@ export default function App() {
       currentWorld.updateWorldTime(clock.getElapsedTime());
 
       if (currentScreen === 'title') {
+        audio.silenceEngine();
         turntableAngleRef.current += dt * 0.2;
         const orbitRadius = 11;
         const camX = Math.sin(turntableAngleRef.current) * orbitRadius;
@@ -376,15 +427,17 @@ export default function App() {
         carMeshes.root.position.set(0, getTerrainHeight(0, 0) + 0.35, 0);
         carMeshes.root.rotation.set(0, 0.4, 0);
       } else if (currentScreen === 'garage') {
+        audio.silenceEngine();
         carMeshes.root.position.set(0, getTerrainHeight(0, 0) + 0.35, 0);
         carMeshes.root.rotation.set(0, turntableAngleRef.current, 0);
 
         chaseCam.camera.position.set(0, 2.2, 6.2);
         chaseCam.camera.lookAt(0, 0.9, 0);
+      } else if (paused) {
+        audio.silenceEngine();
       } else if ((currentScreen === 'freeroam' || currentScreen === 'race') && !paused) {
         const simResult = physics.update(dt, inputRef.current, settings.steeringSensitivity);
 
-        // Advanced audio update with speed, RPM, throttle and surface
         audio.updateEngine(
           physics.state.rpm,
           inputRef.current.throttle,
@@ -397,7 +450,6 @@ export default function App() {
           physics.state.surfaceType
         );
 
-        // Gear shift acoustic feedback
         if (physics.state.gear !== lastGearRef.current) {
           audio.playGearShift();
           lastGearRef.current = physics.state.gear;
@@ -714,7 +766,6 @@ export default function App() {
     [racePosition, profile.bestRaceTimes]
   );
 
-  // Memoized input & control callbacks to prevent re-attaching listeners
   const handleInputChange = useCallback((input: PlayerInput) => {
     inputRef.current = input;
   }, []);
@@ -776,46 +827,38 @@ export default function App() {
     setIsMuted(muted);
   }, []);
 
-  // Container styling for 90-degree rotated landscape experience
-  const containerStyle: React.CSSProperties = isScreenRotated
-    ? {
-        width: '100vh',
-        height: '100vw',
-        transform: 'rotate(90deg)',
-        transformOrigin: 'top left',
-        position: 'absolute',
-        top: 0,
-        left: '100vw',
-      }
-    : {
-        width: '100vw',
-        height: '100vh',
-        position: 'relative',
-      };
+  const [dismissPortraitPrompt, setDismissPortraitPrompt] = useState(false);
 
   return (
-    <div
-      style={containerStyle}
-      className="overflow-hidden bg-black select-none font-sans transition-all duration-300"
-    >
-      {/* WebGL 3D Canvas Mount Point */}
+    <div className="fixed inset-0 w-full h-full overflow-hidden bg-black select-none font-sans touch-none">
+      {/* WebGL 3D Canvas Mount Point - Always 100% full screen */}
       <div ref={mountRef} className="absolute inset-0 z-0 overflow-hidden touch-none" />
 
-      {/* Portrait Prompt Banner for optimal experience */}
-      {isPortrait && !isScreenRotated && (
-        <div className="absolute top-16 inset-x-4 z-40 bg-gradient-to-r from-rose-900/90 to-slate-900/95 border border-rose-500/40 p-3 rounded-2xl shadow-2xl flex items-center justify-between text-white animate-fadeIn pointer-events-auto">
-          <div className="flex items-center space-x-2.5">
-            <RotateCw className="w-5 h-5 text-amber-400 shrink-0 animate-spin" />
-            <div className="text-xs">
-              <span className="font-bold text-amber-300">Rotate Screen:</span> Turn phone sideways or tap to rotate 90° for optimal wide road view!
+      {/* Portrait Prompt Banner with Landscape Auto-Rotate Button */}
+      {isPortrait && !isFullscreen && !dismissPortraitPrompt && (
+        <div className="absolute top-3 inset-x-3 sm:top-6 sm:inset-x-8 z-40 bg-gradient-to-r from-amber-950/95 via-rose-950/95 to-slate-950/95 border-2 border-amber-500/50 p-3 sm:p-4 rounded-3xl shadow-2xl flex items-center justify-between text-white animate-fadeIn pointer-events-auto backdrop-blur-md">
+          <div className="flex items-center space-x-3 text-xs sm:text-sm">
+            <span className="text-2xl animate-spin" style={{ animationDuration: '4s' }}>🔄</span>
+            <div>
+              <div className="font-black text-amber-300 uppercase tracking-wide">FORZA FESTIVAL WIDESCREEN</div>
+              <div className="text-[11px] sm:text-xs text-slate-300">Rotate phone sideways or tap <strong>Landscape</strong> for full view</div>
             </div>
           </div>
-          <button
-            onClick={handleToggleRotateScreen}
-            className="px-3 py-1.5 rounded-xl bg-amber-400 text-black font-black text-xs uppercase tracking-wider shrink-0 ml-2 active:scale-95"
-          >
-            ROTATE 90°
-          </button>
+          <div className="flex items-center space-x-2 shrink-0 ml-2">
+            <button
+              onClick={handleToggleFullscreen}
+              className="px-3.5 py-2 rounded-2xl bg-amber-400 text-black font-black text-xs uppercase tracking-wider shadow-lg active:scale-95 transition-all"
+            >
+              LANDSCAPE
+            </button>
+            <button
+              onClick={() => setDismissPortraitPrompt(true)}
+              className="w-8 h-8 rounded-full bg-white/10 text-slate-300 flex items-center justify-center text-xs hover:bg-white/20 active:scale-90"
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
         </div>
       )}
 
@@ -855,9 +898,9 @@ export default function App() {
         <TitleScreen
           profile={profile}
           isMuted={isMuted}
-          isScreenRotated={isScreenRotated}
+          isFullscreen={isFullscreen}
           onToggleMute={handleToggleMute}
-          onToggleRotateScreen={handleToggleRotateScreen}
+          onToggleFullscreen={handleToggleFullscreen}
           onStartFreeRoam={handleStartFreeRoam}
           onOpenEvents={() => {
             audio.init();
@@ -911,17 +954,19 @@ export default function App() {
             xpNotification={xpNotif}
             fps={measuredFps}
             showFps={settings.showFps}
+            isPortrait={isPortrait}
           />
 
           {!isPaused && (
             <TouchControls
               controlType={settings.controlType}
-              isScreenRotated={isScreenRotated}
+              isFullscreen={isFullscreen}
+              isPortrait={isPortrait}
               onInputChange={handleInputChange}
               onResetCar={handleResetCar}
               onToggleCamera={handleToggleCamera}
               onPause={handlePause}
-              onToggleRotateScreen={handleToggleRotateScreen}
+              onToggleFullscreen={handleToggleFullscreen}
             />
           )}
         </>
@@ -971,8 +1016,8 @@ export default function App() {
             setIsPaused(false);
             setScreen('title');
           }}
-          onToggleRotateScreen={handleToggleRotateScreen}
-          isScreenRotated={isScreenRotated}
+          onToggleFullscreen={handleToggleFullscreen}
+          isFullscreen={isFullscreen}
         />
       )}
 
@@ -1024,6 +1069,7 @@ export default function App() {
             audio.playClick();
             setShowHelpModal(false);
           }}
+          onToggleFullscreen={handleToggleFullscreen}
         />
       )}
     </div>

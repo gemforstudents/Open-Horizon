@@ -19,6 +19,7 @@ interface DrivingHUDProps {
   xpNotification: string | null;
   fps: number;
   showFps: boolean;
+  isPortrait?: boolean;
 }
 
 export const DrivingHUD: React.FC<DrivingHUDProps> = ({
@@ -32,6 +33,7 @@ export const DrivingHUD: React.FC<DrivingHUDProps> = ({
   xpNotification,
   fps,
   showFps,
+  isPortrait = false,
 }) => {
   // Format race time MM:SS.cc
   const formatTime = (seconds: number) => {
@@ -139,9 +141,13 @@ export const DrivingHUD: React.FC<DrivingHUDProps> = ({
       )}
 
       {/* Bottom Center: Dashboard Cluster (Speedometer, Tachometer, Gear) */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center">
+      <div
+        className={`absolute left-1/2 -translate-x-1/2 flex flex-col items-center transition-all ${
+          isPortrait ? 'bottom-22 scale-90 origin-bottom' : 'bottom-6 scale-100'
+        }`}
+      >
         {/* RPM Bar */}
-        <div className="w-56 h-2 bg-slate-950/90 rounded-full overflow-hidden p-0.5 border border-white/20 mb-2">
+        <div className="w-48 sm:w-56 h-2 bg-slate-950/90 rounded-full overflow-hidden p-0.5 border border-white/20 mb-1.5 sm:mb-2">
           <div
             className={`h-full rounded-full transition-all duration-75 ${
               isRedline

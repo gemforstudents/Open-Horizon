@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { Play, RotateCcw, Wrench, Settings, Home, RotateCw } from 'lucide-react';
+import { Play, RotateCcw, Wrench, Settings, Home, Maximize, Minimize } from 'lucide-react';
 
 interface PauseModalProps {
   onResume: () => void;
@@ -11,8 +11,8 @@ interface PauseModalProps {
   onOpenSettings: () => void;
   onReturnToGarage: () => void;
   onReturnToTitle: () => void;
-  onToggleRotateScreen?: () => void;
-  isScreenRotated?: boolean;
+  onToggleFullscreen?: () => void;
+  isFullscreen?: boolean;
 }
 
 export const PauseModal: React.FC<PauseModalProps> = ({
@@ -21,8 +21,8 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onOpenSettings,
   onReturnToGarage,
   onReturnToTitle,
-  onToggleRotateScreen,
-  isScreenRotated,
+  onToggleFullscreen,
+  isFullscreen,
 }) => {
   return (
     <div className="absolute inset-0 bg-black/85 flex items-center justify-center p-4 z-40 text-white select-none">
@@ -40,17 +40,17 @@ export const PauseModal: React.FC<PauseModalProps> = ({
           <span>RESUME DRIVING</span>
         </button>
 
-        {onToggleRotateScreen && (
+        {onToggleFullscreen && (
           <button
-            onClick={onToggleRotateScreen}
+            onClick={onToggleFullscreen}
             className={`flex items-center justify-center space-x-2 py-3 rounded-2xl border font-bold text-sm uppercase tracking-wider active:scale-95 transition-all ${
-              isScreenRotated
+              isFullscreen
                 ? 'bg-amber-500 border-amber-300 text-black shadow-lg shadow-amber-500/30'
                 : 'bg-slate-900 border-white/15 hover:bg-slate-800 text-amber-400'
             }`}
           >
-            <RotateCw className="w-4 h-4" />
-            <span>{isScreenRotated ? 'SCREEN: ROTATED 90°' : 'ROTATE SCREEN (LANDSCAPE)'}</span>
+            {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+            <span>{isFullscreen ? 'EXIT FULLSCREEN' : 'FULLSCREEN LANDSCAPE'}</span>
           </button>
         )}
 

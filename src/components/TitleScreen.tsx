@@ -1,19 +1,19 @@
 /**
  * HORIZON: OPEN ROADS - Title Screen
  * Bespoke SVG Title Lockup, prominent Start CTA, live 3D preview backdrop,
- * quick access to Garage, Events, Settings, and Rotate Screen.
+ * quick access to Garage, Events, Settings, and Fullscreen Landscape.
  */
 
 import React from 'react';
 import { PlayerProfile } from '../types/game';
-import { Play, Flag, Wrench, Settings, HelpCircle, Volume2, VolumeX, Sparkles, RotateCw } from 'lucide-react';
+import { Play, Flag, Wrench, Settings, HelpCircle, Volume2, VolumeX, Sparkles, Maximize, Minimize } from 'lucide-react';
 
 interface TitleScreenProps {
   profile: PlayerProfile;
   isMuted: boolean;
-  isScreenRotated?: boolean;
+  isFullscreen?: boolean;
   onToggleMute: () => void;
-  onToggleRotateScreen?: () => void;
+  onToggleFullscreen?: () => void;
   onStartFreeRoam: () => void;
   onOpenEvents: () => void;
   onOpenGarage: () => void;
@@ -24,9 +24,9 @@ interface TitleScreenProps {
 export const TitleScreen: React.FC<TitleScreenProps> = ({
   profile,
   isMuted,
-  isScreenRotated,
+  isFullscreen,
   onToggleMute,
-  onToggleRotateScreen,
+  onToggleFullscreen,
   onStartFreeRoam,
   onOpenEvents,
   onOpenGarage,
@@ -35,7 +35,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 }) => {
   return (
     <div className="absolute inset-0 select-none flex flex-col justify-between p-6 md:p-12 z-30 pointer-events-none text-white">
-      {/* Top Header: Player Level, Credits, Rotate Screen & Audio Mute */}
+      {/* Top Header: Player Level, Credits, Fullscreen & Audio Mute */}
       <div className="flex items-center justify-between pointer-events-auto">
         <div className="flex items-center space-x-3 bg-slate-950/80 px-4 py-2 rounded-2xl border border-white/15 shadow-xl">
           <div className="flex items-center space-x-1.5 text-amber-400 font-black">
@@ -50,19 +50,19 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
 
         <div className="flex items-center space-x-2.5">
-          {onToggleRotateScreen && (
+          {onToggleFullscreen && (
             <button
-              onClick={onToggleRotateScreen}
+              onClick={onToggleFullscreen}
               className={`h-12 px-3.5 rounded-2xl border flex items-center space-x-2 active:scale-95 transition-all shadow-xl font-bold text-xs uppercase tracking-wider ${
-                isScreenRotated
+                isFullscreen
                   ? 'bg-amber-500 border-amber-300 text-black shadow-amber-500/40'
                   : 'bg-slate-950/80 border-white/20 text-amber-400 hover:bg-slate-900'
               }`}
-              title="Rotate Screen (Landscape)"
+              title="Fullscreen Landscape Mode"
             >
-              <RotateCw className="w-5 h-5" />
+              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
               <span className="hidden sm:inline">
-                {isScreenRotated ? 'ROTATED 90°' : 'ROTATE SCREEN'}
+                {isFullscreen ? 'WINDOWED' : 'FULLSCREEN'}
               </span>
             </button>
           )}
@@ -88,11 +88,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 <stop offset="100%" stopColor="#ff8c00" />
               </linearGradient>
             </defs>
-            {/* Festival geometric accent stripe */}
             <polygon points="10,18 28,18 20,4 2,4" fill="#ff385c" />
             <polygon points="34,18 52,18 44,4 26,4" fill="#ffd166" />
             <polygon points="58,18 76,18 68,4 50,4" fill="#06d6a0" />
-            {/* Primary Wordmark */}
             <text
               x="2"
               y="68"
@@ -105,7 +103,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             >
               HORIZON
             </text>
-            {/* Sub-lockup */}
             <text
               x="12"
               y="108"
@@ -127,7 +124,6 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
         {/* Action Button Row */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Prominent Start CTA */}
           <button
             onClick={onStartFreeRoam}
             className="flex items-center space-x-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-rose-500 via-pink-500 to-orange-500 text-white font-black text-lg tracking-wider uppercase shadow-2xl hover:brightness-110 active:scale-95 transition-all drop-shadow-[0_4px_20px_rgba(255,56,92,0.5)]"
