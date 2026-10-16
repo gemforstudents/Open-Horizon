@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="50%" stop-color="#1d1135" />
+      <stop offset="100%" stop-color="#3c092b" />
+    </linearGradient>
+    <linearGradient id="sun" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffd000" />
+      <stop offset="50%" stop-color="#ff3366" />
+      <stop offset="100%" stop-color="#990066" />
+    </linearGradient>
+    <linearGradient id="road" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1c29" />
+      <stop offset="100%" stop-color="#080a10" />
+    </linearGradient>
+    <linearGradient id="car" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff385c" />
+      <stop offset="100%" stop-color="#ff8c00" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="100" fill="url(#bg)" />
+  <circle cx="256" cy="220" r="130" fill="url(#sun)" opacity="0.9" />
+  <!-- Distant mountain peaks -->
+  <polygon points="40,320 180,210 320,320" fill="#201133" opacity="0.8" />
+  <polygon points="200,320 360,180 500,320" fill="#2d1245" opacity="0.8" />
+  <!-- Road perspective -->
+  <polygon points="256,260 256,260 50,512 462,512" fill="url(#road)" />
+  <!-- Road dash lines -->
+  <polygon points="254,265 258,265 264,320 248,320" fill="#ffd000" />
+  <polygon points="246,350 266,350 274,430 238,430" fill="#ffd000" />
+  <!-- Sleek supercar silhouette -->
+  <path d="M 130 420 C 145 375, 175 350, 256 350 C 337 350, 367 375, 382 420 C 395 440, 385 455, 360 455 L 152 455 C 127 455, 117 440, 130 420 Z" fill="url(#car)" />
+  <!-- Windshield -->
+  <path d="M 195 385 C 210 365, 240 360, 256 360 C 272 360, 302 365, 317 385 C 310 395, 202 395, 195 385 Z" fill="#0f172a" />
+  <!-- Tail lights -->
+  <rect x="145" y="425" width="45" height="10" rx="3" fill="#ff1a40" />
+  <rect x="322" y="425" width="45" height="10" rx="3" fill="#ff1a40" />
+  <rect x="200" y="432" width="112" height="4" rx="2" fill="#ff4060" />
+</svg>
