@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { Play, RotateCcw, Wrench, Settings, Home } from 'lucide-react';
+import { Play, RotateCcw, Wrench, Settings, Home, RotateCw } from 'lucide-react';
 
 interface PauseModalProps {
   onResume: () => void;
@@ -11,6 +11,8 @@ interface PauseModalProps {
   onOpenSettings: () => void;
   onReturnToGarage: () => void;
   onReturnToTitle: () => void;
+  onToggleRotateScreen?: () => void;
+  isScreenRotated?: boolean;
 }
 
 export const PauseModal: React.FC<PauseModalProps> = ({
@@ -19,10 +21,12 @@ export const PauseModal: React.FC<PauseModalProps> = ({
   onOpenSettings,
   onReturnToGarage,
   onReturnToTitle,
+  onToggleRotateScreen,
+  isScreenRotated,
 }) => {
   return (
     <div className="absolute inset-0 bg-black/85 flex items-center justify-center p-4 z-40 text-white select-none">
-      <div className="bg-slate-950 border border-white/20 rounded-3xl max-w-sm w-full p-6 shadow-2xl flex flex-col space-y-4">
+      <div className="bg-slate-950 border border-white/20 rounded-3xl max-w-sm w-full p-6 shadow-2xl flex flex-col space-y-3.5">
         <div className="text-center pb-2 border-b border-white/10">
           <div className="text-xs font-black uppercase tracking-widest text-rose-500">HORIZON</div>
           <div className="text-2xl font-black tracking-tight">GAME PAUSED</div>
@@ -36,11 +40,25 @@ export const PauseModal: React.FC<PauseModalProps> = ({
           <span>RESUME DRIVING</span>
         </button>
 
+        {onToggleRotateScreen && (
+          <button
+            onClick={onToggleRotateScreen}
+            className={`flex items-center justify-center space-x-2 py-3 rounded-2xl border font-bold text-sm uppercase tracking-wider active:scale-95 transition-all ${
+              isScreenRotated
+                ? 'bg-amber-500 border-amber-300 text-black shadow-lg shadow-amber-500/30'
+                : 'bg-slate-900 border-white/15 hover:bg-slate-800 text-amber-400'
+            }`}
+          >
+            <RotateCw className="w-4 h-4" />
+            <span>{isScreenRotated ? 'SCREEN: ROTATED 90°' : 'ROTATE SCREEN (LANDSCAPE)'}</span>
+          </button>
+        )}
+
         <button
           onClick={onRestart}
           className="flex items-center justify-center space-x-2 py-3 rounded-2xl bg-slate-900 border border-white/15 hover:bg-slate-850 font-bold text-sm uppercase tracking-wider active:scale-95 transition-all"
         >
-          <RotateCcw className="w-4 h-4 text-amber-400" />
+          <RotateCcw className="w-4 h-4 text-cyan-400" />
           <span>RESTART EVENT</span>
         </button>
 
@@ -48,7 +66,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
           onClick={onOpenSettings}
           className="flex items-center justify-center space-x-2 py-3 rounded-2xl bg-slate-900 border border-white/15 hover:bg-slate-850 font-bold text-sm uppercase tracking-wider active:scale-95 transition-all"
         >
-          <Settings className="w-4 h-4 text-cyan-400" />
+          <Settings className="w-4 h-4 text-slate-300" />
           <span>SETTINGS</span>
         </button>
 
@@ -62,7 +80,7 @@ export const PauseModal: React.FC<PauseModalProps> = ({
 
         <button
           onClick={onReturnToTitle}
-          className="flex items-center justify-center space-x-2 py-3 rounded-2xl bg-slate-900/60 border border-white/10 hover:bg-slate-850 font-semibold text-xs uppercase tracking-wider text-slate-400 active:scale-95 transition-all"
+          className="flex items-center justify-center space-x-2 py-2.5 rounded-2xl bg-slate-900/60 border border-white/10 hover:bg-slate-850 font-semibold text-xs uppercase tracking-wider text-slate-400 active:scale-95 transition-all"
         >
           <Home className="w-4 h-4" />
           <span>TITLE SCREEN</span>

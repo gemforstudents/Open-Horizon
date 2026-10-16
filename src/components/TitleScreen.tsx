@@ -1,17 +1,19 @@
 /**
  * HORIZON: OPEN ROADS - Title Screen
  * Bespoke SVG Title Lockup, prominent Start CTA, live 3D preview backdrop,
- * and quick access to Garage, Events, and Settings.
+ * quick access to Garage, Events, Settings, and Rotate Screen.
  */
 
 import React from 'react';
 import { PlayerProfile } from '../types/game';
-import { Play, Flag, Wrench, Settings, HelpCircle, Volume2, VolumeX, Sparkles } from 'lucide-react';
+import { Play, Flag, Wrench, Settings, HelpCircle, Volume2, VolumeX, Sparkles, RotateCw } from 'lucide-react';
 
 interface TitleScreenProps {
   profile: PlayerProfile;
   isMuted: boolean;
+  isScreenRotated?: boolean;
   onToggleMute: () => void;
+  onToggleRotateScreen?: () => void;
   onStartFreeRoam: () => void;
   onOpenEvents: () => void;
   onOpenGarage: () => void;
@@ -22,7 +24,9 @@ interface TitleScreenProps {
 export const TitleScreen: React.FC<TitleScreenProps> = ({
   profile,
   isMuted,
+  isScreenRotated,
   onToggleMute,
+  onToggleRotateScreen,
   onStartFreeRoam,
   onOpenEvents,
   onOpenGarage,
@@ -31,7 +35,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 }) => {
   return (
     <div className="absolute inset-0 select-none flex flex-col justify-between p-6 md:p-12 z-30 pointer-events-none text-white">
-      {/* Top Header: Player Level, Credits & Audio Mute */}
+      {/* Top Header: Player Level, Credits, Rotate Screen & Audio Mute */}
       <div className="flex items-center justify-between pointer-events-auto">
         <div className="flex items-center space-x-3 bg-slate-950/80 px-4 py-2 rounded-2xl border border-white/15 shadow-xl">
           <div className="flex items-center space-x-1.5 text-amber-400 font-black">
@@ -45,25 +49,43 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={onToggleMute}
-          className="w-12 h-12 rounded-2xl bg-slate-950/80 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all shadow-xl hover:bg-slate-900"
-          title="Toggle Audio Mute"
-        >
-          {isMuted ? <VolumeX className="w-5 h-5 text-rose-400" /> : <Volume2 className="w-5 h-5 text-emerald-400" />}
-        </button>
+        <div className="flex items-center space-x-2.5">
+          {onToggleRotateScreen && (
+            <button
+              onClick={onToggleRotateScreen}
+              className={`h-12 px-3.5 rounded-2xl border flex items-center space-x-2 active:scale-95 transition-all shadow-xl font-bold text-xs uppercase tracking-wider ${
+                isScreenRotated
+                  ? 'bg-amber-500 border-amber-300 text-black shadow-amber-500/40'
+                  : 'bg-slate-950/80 border-white/20 text-amber-400 hover:bg-slate-900'
+              }`}
+              title="Rotate Screen (Landscape)"
+            >
+              <RotateCw className="w-5 h-5" />
+              <span className="hidden sm:inline">
+                {isScreenRotated ? 'ROTATED 90°' : 'ROTATE SCREEN'}
+              </span>
+            </button>
+          )}
+
+          <button
+            onClick={onToggleMute}
+            className="w-12 h-12 rounded-2xl bg-slate-950/80 border border-white/20 text-white flex items-center justify-center active:scale-95 transition-all shadow-xl hover:bg-slate-900"
+            title="Toggle Audio Mute"
+          >
+            {isMuted ? <VolumeX className="w-5 h-5 text-rose-400" /> : <Volume2 className="w-5 h-5 text-emerald-400" />}
+          </button>
+        </div>
       </div>
 
       {/* Center Left: Bespoke Inline SVG Title Lockup */}
       <div className="max-w-xl my-auto pointer-events-auto">
-        {/* SVG Horizon Title Lockup */}
         <div className="mb-4">
           <svg viewBox="0 0 600 130" className="w-full max-w-lg drop-shadow-[0_8px_24px_rgba(0,0,0,0.8)]">
             <defs>
               <linearGradient id="horizonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ffffff" />
-                <stop offset="60%" stop-color="#ff385c" />
-                <stop offset="100%" stop-color="#ff8c00" />
+                <stop offset="0%" stopColor="#ffffff" />
+                <stop offset="60%" stopColor="#ff385c" />
+                <stop offset="100%" stopColor="#ff8c00" />
               </linearGradient>
             </defs>
             {/* Festival geometric accent stripe */}

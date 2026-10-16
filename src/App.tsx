@@ -2,7 +2,7 @@
  * HORIZON: OPEN ROADS
  * Main Game Application Entry Point
  * Orchestrates Three.js rendering, physics simulation, AI opponents,
- * sound synthesis, game state transitions, and responsive touch HUD.
+ * upgraded procedural sound synthesis, landscape orientation rotation, and responsive touch HUD.
  */
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -50,6 +50,7 @@ import { PauseModal } from './components/PauseModal';
 import { RaceResultsModal } from './components/RaceResultsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
+import { RotateCw } from 'lucide-react';
 
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -60,6 +61,10 @@ export default function App() {
   const [screen, setScreen] = useState<GameScreen>('title');
   const [isPaused, setIsPaused] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+
+  // Orientation & Screen Rotation State
+  const [isScreenRotated, setIsScreenRotated] = useState<boolean>(false);
+  const [isPortrait, setIsPortrait] = useState<boolean>(false);
 
   // Modals State
   const [showEventSelect, setShowEventSelect] = useState(false);
@@ -109,7 +114,7 @@ export default function App() {
     surfaceType: 'asphalt',
   });
 
-  // Game Engine Mutable References (avoiding React re-renders)
+  // Game Engine Mutable References
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const worldRef = useRef<WorldBuildResult | null>(null);
   const playerCarMeshesRef = useRef<CarMeshes | null>(null);
@@ -139,11 +144,53 @@ export default function App() {
   const currentCpIdxRef = useRef<number>(0);
   const raceTimerRef = useRef<number>(0);
   const raceStartedRef = useRef<boolean>(false);
+  const lastGearRef = useRef<number>(1);
 
   // Turntable interaction for Garage mode
   const isPointerDownRef = useRef<boolean>(false);
   const lastPointerXRef = useRef<number>(0);
   const turntableAngleRef = useRef<number>(0);
+
+  // Auto-detect portrait orientation
+  useEffect(() => {
+    const checkOrientation = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      setIsPortrait(portrait);
+    };
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    window.addEventListener('orientationchange', checkOrientation);
+    return () => {
+      window.removeEventListener('resize', checkOrientation);
+      window.removeEventListener('orientationchange', checkOrientation);
+    };
+  }, []);
+
+  // Screen rotation toggle handler
+  const handleToggleRotateScreen = useCallback(() => {
+    audio.init();
+    audio.playClick();
+    setIsScreenRotated((prev) => !prev);
+    try {
+      if (typeof window !== 'undefined' && window.screen && 'orientation' in window.screen) {
+        (window.screen.orientation as any).lock('landscape').catch(() => {});
+      }
+    } catch {}
+  }, []);
+
+  // Unlock Web Audio on first user gesture
+  useEffect(() => {
+    const unlockAudio = () => {
+      audio.init();
+      audio.resume();
+    };
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+    };
+  }, []);
 
   // Apply settings to renderer and camera
   const applySettingsToEngine = useCallback(
@@ -173,7 +220,6 @@ export default function App() {
       if (!worldRef.current) return;
       const scene = worldRef.current.scene;
 
-      // Remove existing player car meshes
       if (playerCarMeshesRef.current) {
         scene.remove(playerCarMeshesRef.current.root);
       }
@@ -185,8 +231,9 @@ export default function App() {
       scene.add(meshes.root);
       playerCarMeshesRef.current = meshes;
 
+      const initialRoadHeading = Math.atan2(-60, 40);
       if (!physicsRef.current) {
-        physicsRef.current = new VehiclePhysics(cfg, 0, 0, 0);
+        physicsRef.current = new VehiclePhysics(cfg, -5, 10, initialRoadHeading);
       } else {
         physicsRef.current.setConfig(cfg);
       }
@@ -194,12 +241,27 @@ export default function App() {
     [profile.vehiclePaints]
   );
 
+  // Resize handler considering rotated container
+  const handleResize = useCallback(() => {
+    if (!mountRef.current || !rendererRef.current || !cameraRef.current) return;
+    const width = mountRef.current.clientWidth;
+    const height = mountRef.current.clientHeight;
+    cameraRef.current.camera.aspect = width / height;
+    cameraRef.current.camera.updateProjectionMatrix();
+    rendererRef.current.setSize(width, height);
+  }, []);
+
+  // Trigger resize recalculation when isScreenRotated changes
+  useEffect(() => {
+    const timer = setTimeout(handleResize, 120);
+    return () => clearTimeout(timer);
+  }, [isScreenRotated, handleResize]);
+
   // Setup Three.js Scene and Game Loop
   useEffect(() => {
     const container = mountRef.current;
     if (!container) return;
 
-    // Check WebGL availability
     let renderer: THREE.WebGLRenderer;
     try {
       renderer = new THREE.WebGLRenderer({
@@ -226,41 +288,24 @@ export default function App() {
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Build World (Terrain, Roads, Trees, Rocks, Lighting, Festival Hub)
     const world = buildWorld(renderer);
     worldRef.current = world;
 
-    // Initialize Chase Camera
     const cameraSystem = new ChaseCamera(64, container.clientWidth / container.clientHeight);
     cameraSystem.setMode(settings.cameraDistance);
     cameraRef.current = cameraSystem;
 
-    // Initialize Particle System
     const particleSystem = new ParticleSystem(world.scene);
     particlesRef.current = particleSystem;
 
-    // Initialize AI Opponents Controller
     const ai = new AIController(world.scene);
     aiRef.current = ai;
 
-    // Spawn Initial Vehicle
     spawnVehicle(profile.selectedVehicleId);
-
-    // Warm-up shaders to avoid mid-race stutter
     renderer.compile(world.scene, cameraSystem.camera);
 
-    // Resize Handler
-    const handleResize = () => {
-      if (!container || !rendererRef.current || !cameraRef.current) return;
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-      cameraRef.current.camera.aspect = width / height;
-      cameraRef.current.camera.updateProjectionMatrix();
-      rendererRef.current.setSize(width, height);
-    };
     window.addEventListener('resize', handleResize);
 
-    // Pointer events for Turntable rotation in Garage & Title
     const onPointerDown = (e: PointerEvent) => {
       if (screenRef.current === 'garage' || screenRef.current === 'title') {
         isPointerDownRef.current = true;
@@ -282,7 +327,6 @@ export default function App() {
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
 
-    // Main Game Animation Loop
     let animId: number;
     let lastTime = performance.now();
     let hudThrottleTimer = 0;
@@ -299,7 +343,6 @@ export default function App() {
       lastTime = now;
       const dt = Math.min(rawDt, 0.05);
 
-      // FPS tracking
       fpsFrames++;
       fpsTimer += dt;
       if (fpsTimer >= 0.5) {
@@ -318,11 +361,9 @@ export default function App() {
 
       if (!physics || !carMeshes || !chaseCam || !currentWorld) return;
 
-      // Update animated spotlights and festival beacon
       currentWorld.updateWorldTime(clock.getElapsedTime());
 
       if (currentScreen === 'title') {
-        // Slow cinematic orbit around vehicle at Festival Hub
         turntableAngleRef.current += dt * 0.2;
         const orbitRadius = 11;
         const camX = Math.sin(turntableAngleRef.current) * orbitRadius;
@@ -335,27 +376,38 @@ export default function App() {
         carMeshes.root.position.set(0, getTerrainHeight(0, 0) + 0.35, 0);
         carMeshes.root.rotation.set(0, 0.4, 0);
       } else if (currentScreen === 'garage') {
-        // Turntable vehicle inspection
         carMeshes.root.position.set(0, getTerrainHeight(0, 0) + 0.35, 0);
         carMeshes.root.rotation.set(0, turntableAngleRef.current, 0);
 
-        // Position camera nicely framed on the vehicle
         chaseCam.camera.position.set(0, 2.2, 6.2);
         chaseCam.camera.lookAt(0, 0.9, 0);
       } else if ((currentScreen === 'freeroam' || currentScreen === 'race') && !paused) {
-        // Active Driving Simulation Step
         const simResult = physics.update(dt, inputRef.current, settings.steeringSensitivity);
 
-        // Audio updates
-        audio.updateEngine(physics.state.rpm, inputRef.current.throttle, physics.config.engineSoundFreq);
-        audio.updateTireSqueal(physics.state.isDrifting, physics.state.driftAngle);
+        // Advanced audio update with speed, RPM, throttle and surface
+        audio.updateEngine(
+          physics.state.rpm,
+          inputRef.current.throttle,
+          physics.config.engineSoundFreq,
+          physics.state.speedKmh
+        );
+        audio.updateTireSqueal(
+          physics.state.isDrifting,
+          physics.state.driftAngle,
+          physics.state.surfaceType
+        );
+
+        // Gear shift acoustic feedback
+        if (physics.state.gear !== lastGearRef.current) {
+          audio.playGearShift();
+          lastGearRef.current = physics.state.gear;
+        }
 
         if (simResult.collisionIntensity > 0.2) {
           audio.playCollision(simResult.collisionIntensity);
           chaseCam.triggerShake(simResult.collisionIntensity * 1.5);
         }
 
-        // Particle emissions: tire smoke when drifting or burnout
         if (physics.state.isDrifting && physics.state.speedKmh > 20) {
           particlesRef.current?.emit(
             physics.state.x - Math.sin(physics.state.heading) * 1.5,
@@ -367,24 +419,19 @@ export default function App() {
         }
         particlesRef.current?.update(dt);
 
-        // Update player 3D car position & orientation
         carMeshes.root.position.set(physics.state.x, physics.state.y, physics.state.z);
         carMeshes.root.rotation.set(0, physics.state.heading, 0);
 
-        // Suspension pitch (squat/dive) and roll (cornering lean)
         carMeshes.chassis.rotation.set(physics.state.pitch, 0, physics.state.roll);
 
-        // Front wheels steering angle
         carMeshes.frontLeftWheel.rotation.y = physics.state.steeringAngle;
         carMeshes.frontRightWheel.rotation.y = Math.PI + physics.state.steeringAngle;
 
-        // All wheels spin rotation
         carMeshes.frontLeftWheel.rotation.x = physics.state.wheelRotation;
         carMeshes.frontRightWheel.rotation.x = -physics.state.wheelRotation;
         carMeshes.rearLeftWheel.rotation.x = physics.state.wheelRotation;
         carMeshes.rearRightWheel.rotation.x = -physics.state.wheelRotation;
 
-        // Brake lights illumination
         const isBraking = inputRef.current.brake > 0 || inputRef.current.handbrake;
         for (const bl of carMeshes.brakeLights) {
           if (bl.material && (bl.material as THREE.MeshStandardMaterial).emissiveIntensity !== undefined) {
@@ -392,10 +439,9 @@ export default function App() {
           }
         }
 
-        // Chase Camera Update
         chaseCam.update(physics.state, dt);
 
-        // --- Speed Trap Detections in Open-World ---
+        // Speed Traps
         for (const st of GAME_SPEED_TRAPS) {
           const distToSt = Math.hypot(physics.state.x - st.x, physics.state.z - st.z);
           if (distToSt < 12 && physics.state.speedKmh > 75) {
@@ -403,7 +449,6 @@ export default function App() {
             chaseCam.triggerShake(0.8);
             setSpeedTrapNotif({ speed: Math.round(physics.state.speedKmh), name: st.name });
 
-            // Reward Credits & save record
             setProfile((prev) => {
               const currentRecord = prev.speedTrapRecords[st.id] || 0;
               const newRecord = Math.max(currentRecord, Math.round(physics.state.speedKmh));
@@ -420,7 +465,7 @@ export default function App() {
           }
         }
 
-        // --- Horizon XP Board Collisions ---
+        // Horizon XP Boards
         for (const board of GAME_XP_BOARDS) {
           if (profile.collectedBoards.includes(board.id)) continue;
           const distToBoard = Math.hypot(physics.state.x - board.x, physics.state.z - board.z);
@@ -429,14 +474,12 @@ export default function App() {
             chaseCam.triggerShake(1.2);
             particlesRef.current?.emit(board.x, board.y + 1, board.z, 'spark', 15);
 
-            // Hide the 3D board mesh
             const bMesh = currentWorld.xpBoardMeshes.get(board.id);
             if (bMesh) bMesh.visible = false;
 
             setXpNotif(`+${board.xpValue.toLocaleString()} XP`);
             setTimeout(() => setXpNotif(null), 3000);
 
-            // Save to profile
             setProfile((prev) => {
               const newXp = prev.xp + board.xpValue;
               const newLevel = 1 + Math.floor(newXp / 5000);
@@ -452,7 +495,7 @@ export default function App() {
           }
         }
 
-        // --- Active Race Manager ---
+        // Race logic
         if (currentScreen === 'race' && activeRaceRef.current && raceStartedRef.current) {
           raceTimerRef.current += dt;
           setRaceTimer(raceTimerRef.current);
@@ -470,19 +513,23 @@ export default function App() {
                 setCurrentCheckpointIdx(cpIdx + 1);
                 updateCheckpointVisuals(race, cpIdx + 1);
               } else {
-                // Finish Line Passed!
                 finishRace(race, raceTimerRef.current);
               }
             }
           }
 
-          // AI Opponents Simulation
           if (aiRef.current) {
             aiRef.current.update(dt, race.checkpoints, raceStartedRef.current);
 
-            // Calculate player placement relative to AI opponents
             let playerRank = 1;
-            const playerProgress = cpIdx + (1.0 - Math.min((targetCp ? Math.hypot(physics.state.x - targetCp.x, physics.state.z - targetCp.z) : 0) / 100, 1.0));
+            const playerProgress =
+              cpIdx +
+              (1.0 -
+                Math.min(
+                  (targetCp ? Math.hypot(physics.state.x - targetCp.x, physics.state.z - targetCp.z) : 0) /
+                    100,
+                  1.0
+                ));
             for (const aiRacer of aiRef.current.racers) {
               if (aiRacer.progressLapRatio > playerProgress) {
                 playerRank++;
@@ -492,7 +539,6 @@ export default function App() {
           }
         }
 
-        // Throttle React state telemetry updates to 15 Hz for peak performance
         hudThrottleTimer += dt;
         if (hudThrottleTimer >= 0.065) {
           hudThrottleTimer = 0;
@@ -500,7 +546,6 @@ export default function App() {
         }
       }
 
-      // Render Three.js Scene
       renderer.render(world.scene, chaseCam.camera);
     };
 
@@ -519,9 +564,16 @@ export default function App() {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [applySettingsToEngine, spawnVehicle, profile.selectedVehicleId, settings.graphicsQuality, settings.cameraDistance, profile.collectedBoards]);
+  }, [
+    applySettingsToEngine,
+    spawnVehicle,
+    handleResize,
+    profile.selectedVehicleId,
+    settings.graphicsQuality,
+    settings.cameraDistance,
+    profile.collectedBoards,
+  ]);
 
-  // Update 3D Checkpoint gate rings in the world
   const updateCheckpointVisuals = (race: RaceConfig, currentIdx: number) => {
     if (!worldRef.current) return;
     const group = worldRef.current.checkpointMeshGroup;
@@ -529,7 +581,6 @@ export default function App() {
       group.remove(group.children[0]);
     }
 
-    // Render active target checkpoint and next checkpoint
     const cp = race.checkpoints[currentIdx];
     if (cp) {
       const isFinish = currentIdx === race.checkpoints.length - 1;
@@ -538,17 +589,17 @@ export default function App() {
     }
   };
 
-  // Start Free Roam
-  const handleStartFreeRoam = () => {
+  const handleStartFreeRoam = useCallback(() => {
     audio.init();
     audio.resume();
     audio.playClick();
 
+    const roadHeading = Math.atan2(-60, 40);
     if (physicsRef.current) {
-      physicsRef.current.state.x = 0;
+      physicsRef.current.state.x = -5;
       physicsRef.current.state.z = 10;
-      physicsRef.current.state.y = getTerrainHeight(0, 10) + 0.4;
-      physicsRef.current.state.heading = 0;
+      physicsRef.current.state.y = getTerrainHeight(-5, 10) + 0.4;
+      physicsRef.current.state.heading = roadHeading;
       physicsRef.current.state.vx = 0;
       physicsRef.current.state.vz = 0;
       physicsRef.current.state.speedKmh = 0;
@@ -565,10 +616,9 @@ export default function App() {
     aiRef.current?.clearRacers();
     setScreen('freeroam');
     setIsPaused(false);
-  };
+  }, []);
 
-  // Start Race Event with Countdown
-  const handleStartRace = (race: RaceConfig) => {
+  const handleStartRace = useCallback((race: RaceConfig) => {
     audio.init();
     audio.resume();
     audio.playClick();
@@ -597,19 +647,16 @@ export default function App() {
       physicsRef.current.state.speedKmh = 0;
     }
 
-    // Spawn AI racers
     if (aiRef.current) {
       aiRef.current.setupRacers(race.checkpoints, race.aiCount);
     }
 
-    // Display first checkpoint arch
     updateCheckpointVisuals(race, 0);
 
     setScreen('race');
     setIsPaused(false);
     raceStartedRef.current = false;
 
-    // Countdown: 3, 2, 1, GO!
     setRaceCountdown(3);
     let count = 3;
     const interval = setInterval(() => {
@@ -618,7 +665,7 @@ export default function App() {
         setRaceCountdown(count);
         audio.playClick();
       } else if (count === 0) {
-        setRaceCountdown(0); // GO!
+        setRaceCountdown(0);
         audio.playCheckpoint();
         raceStartedRef.current = true;
       } else {
@@ -626,106 +673,151 @@ export default function App() {
         setRaceCountdown(null);
       }
     }, 900);
-  };
+  }, []);
 
-  // Finish Race and show results
-  const finishRace = (race: RaceConfig, finalTime: number) => {
-    raceStartedRef.current = false;
-    audio.playCheckpoint();
+  const finishRace = useCallback(
+    (race: RaceConfig, finalTime: number) => {
+      raceStartedRef.current = false;
+      audio.playCheckpoint();
 
-    const finalPos = racePosition;
-    const prevBest = profile.bestRaceTimes[race.id];
-    const isNewRecord = !prevBest || finalTime < prevBest;
+      const finalPos = racePosition;
+      const prevBest = profile.bestRaceTimes[race.id];
+      const isNewRecord = !prevBest || finalTime < prevBest;
 
-    // Rewards
-    const multiplier = finalPos === 1 ? 1.0 : finalPos === 2 ? 0.75 : finalPos === 3 ? 0.5 : 0.3;
-    const earnedCredits = Math.round(race.rewards.credits * multiplier);
-    const earnedXp = Math.round(race.rewards.xp * multiplier);
+      const multiplier = finalPos === 1 ? 1.0 : finalPos === 2 ? 0.75 : finalPos === 3 ? 0.5 : 0.3;
+      const earnedCredits = Math.round(race.rewards.credits * multiplier);
+      const earnedXp = Math.round(race.rewards.xp * multiplier);
 
-    setProfile((prev) => {
-      const newXp = prev.xp + earnedXp;
-      const updated: PlayerProfile = {
-        ...prev,
-        credits: prev.credits + earnedCredits,
-        xp: newXp,
-        level: 1 + Math.floor(newXp / 5000),
-        bestRaceTimes: {
-          ...prev.bestRaceTimes,
-          [race.id]: isNewRecord ? finalTime : prevBest,
-        },
-      };
-      saveProfile(updated);
-      return updated;
-    });
+      setProfile((prev) => {
+        const newXp = prev.xp + earnedXp;
+        const updated: PlayerProfile = {
+          ...prev,
+          credits: prev.credits + earnedCredits,
+          xp: newXp,
+          level: 1 + Math.floor(newXp / 5000),
+          bestRaceTimes: {
+            ...prev.bestRaceTimes,
+            [race.id]: isNewRecord ? finalTime : prevBest,
+          },
+        };
+        saveProfile(updated);
+        return updated;
+      });
 
-    setRaceResultData({
-      position: finalPos,
-      time: finalTime,
-      isNewRecord,
-    });
-    setShowRaceResults(true);
-  };
+      setRaceResultData({
+        position: finalPos,
+        time: finalTime,
+        isNewRecord,
+      });
+      setShowRaceResults(true);
+    },
+    [racePosition, profile.bestRaceTimes]
+  );
 
-  // Touch & Keyboard input updates
-  const handleInputChange = (input: PlayerInput) => {
+  // Memoized input & control callbacks to prevent re-attaching listeners
+  const handleInputChange = useCallback((input: PlayerInput) => {
     inputRef.current = input;
-  };
+  }, []);
 
-  // Toggle Camera View Mode
-  const handleToggleCamera = () => {
+  const handleToggleCamera = useCallback(() => {
     audio.playClick();
     const modes: ('close' | 'medium' | 'far' | 'hood')[] = ['close', 'medium', 'far', 'hood'];
     const curIdx = modes.indexOf(settings.cameraDistance);
     const nextMode = modes[(curIdx + 1) % modes.length];
     const updatedSettings = { ...settings, cameraDistance: nextMode };
     applySettingsToEngine(updatedSettings);
-  };
+  }, [settings, applySettingsToEngine]);
 
-  // Emergency Car Reset
-  const handleResetCar = () => {
+  const handleResetCar = useCallback(() => {
     audio.playClick();
     physicsRef.current?.resetToRoad();
-  };
+  }, []);
 
-  // Vehicle Selection in Garage
-  const handleSelectVehicle = (vehicleId: string) => {
+  const handlePause = useCallback(() => {
     audio.playClick();
-    setProfile((prev) => {
-      const updated = { ...prev, selectedVehicleId: vehicleId };
-      saveProfile(updated);
-      return updated;
-    });
-    spawnVehicle(vehicleId);
-  };
+    setIsPaused(true);
+  }, []);
 
-  // Paint Color Selection
-  const handleChangeColor = (colorHex: string) => {
-    audio.playClick();
-    setProfile((prev) => {
-      const updated = {
-        ...prev,
-        vehiclePaints: { ...prev.vehiclePaints, [profile.selectedVehicleId]: colorHex },
-      };
-      saveProfile(updated);
-      return updated;
-    });
-    if (playerCarMeshesRef.current) {
-      updateCarPaint(playerCarMeshesRef.current, colorHex);
-    }
-  };
+  const handleSelectVehicle = useCallback(
+    (vehicleId: string) => {
+      audio.playClick();
+      setProfile((prev) => {
+        const updated = { ...prev, selectedVehicleId: vehicleId };
+        saveProfile(updated);
+        return updated;
+      });
+      spawnVehicle(vehicleId);
+    },
+    [spawnVehicle]
+  );
 
-  // Audio Mute Toggle
-  const handleToggleMute = () => {
+  const handleChangeColor = useCallback(
+    (colorHex: string) => {
+      audio.playClick();
+      setProfile((prev) => {
+        const updated = {
+          ...prev,
+          vehiclePaints: { ...prev.vehiclePaints, [profile.selectedVehicleId]: colorHex },
+        };
+        saveProfile(updated);
+        return updated;
+      });
+      if (playerCarMeshesRef.current) {
+        updateCarPaint(playerCarMeshesRef.current, colorHex);
+      }
+    },
+    [profile.selectedVehicleId]
+  );
+
+  const handleToggleMute = useCallback(() => {
     audio.init();
     audio.resume();
     const muted = audio.toggleMute();
     setIsMuted(muted);
-  };
+  }, []);
+
+  // Container styling for 90-degree rotated landscape experience
+  const containerStyle: React.CSSProperties = isScreenRotated
+    ? {
+        width: '100vh',
+        height: '100vw',
+        transform: 'rotate(90deg)',
+        transformOrigin: 'top left',
+        position: 'absolute',
+        top: 0,
+        left: '100vw',
+      }
+    : {
+        width: '100vw',
+        height: '100vh',
+        position: 'relative',
+      };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-black select-none font-sans">
+    <div
+      style={containerStyle}
+      className="overflow-hidden bg-black select-none font-sans transition-all duration-300"
+    >
       {/* WebGL 3D Canvas Mount Point */}
       <div ref={mountRef} className="absolute inset-0 z-0 overflow-hidden touch-none" />
+
+      {/* Portrait Prompt Banner for optimal experience */}
+      {isPortrait && !isScreenRotated && (
+        <div className="absolute top-16 inset-x-4 z-40 bg-gradient-to-r from-rose-900/90 to-slate-900/95 border border-rose-500/40 p-3 rounded-2xl shadow-2xl flex items-center justify-between text-white animate-fadeIn pointer-events-auto">
+          <div className="flex items-center space-x-2.5">
+            <RotateCw className="w-5 h-5 text-amber-400 shrink-0 animate-spin" />
+            <div className="text-xs">
+              <span className="font-bold text-amber-300">Rotate Screen:</span> Turn phone sideways or tap to rotate 90° for optimal wide road view!
+            </div>
+          </div>
+          <button
+            onClick={handleToggleRotateScreen}
+            className="px-3 py-1.5 rounded-xl bg-amber-400 text-black font-black text-xs uppercase tracking-wider shrink-0 ml-2 active:scale-95"
+          >
+            ROTATE 90°
+          </button>
+        </div>
+      )}
 
       {/* WebGL Error State Fallback */}
       {webGlError && (
@@ -763,7 +855,9 @@ export default function App() {
         <TitleScreen
           profile={profile}
           isMuted={isMuted}
+          isScreenRotated={isScreenRotated}
           onToggleMute={handleToggleMute}
+          onToggleRotateScreen={handleToggleRotateScreen}
           onStartFreeRoam={handleStartFreeRoam}
           onOpenEvents={() => {
             audio.init();
@@ -822,13 +916,12 @@ export default function App() {
           {!isPaused && (
             <TouchControls
               controlType={settings.controlType}
+              isScreenRotated={isScreenRotated}
               onInputChange={handleInputChange}
               onResetCar={handleResetCar}
               onToggleCamera={handleToggleCamera}
-              onPause={() => {
-                audio.playClick();
-                setIsPaused(true);
-              }}
+              onPause={handlePause}
+              onToggleRotateScreen={handleToggleRotateScreen}
             />
           )}
         </>
@@ -878,6 +971,8 @@ export default function App() {
             setIsPaused(false);
             setScreen('title');
           }}
+          onToggleRotateScreen={handleToggleRotateScreen}
+          isScreenRotated={isScreenRotated}
         />
       )}
 
