@@ -1,0 +1,6 @@
+{
+  "name": "HORIZON: OPEN ROADS",
+  "description": "A mobile-first 3D open-world arcade racing game inspired by Forza Horizon. Explore scenic highways, mountain passes, drift zones, speed traps, and complete high-stakes festival races.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
