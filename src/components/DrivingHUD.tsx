@@ -56,16 +56,26 @@ export const DrivingHUD: React.FC<DrivingHUDProps> = ({
 
   return (
     <div className="absolute inset-0 pointer-events-none select-none overflow-hidden z-10 text-white font-sans">
-      {/* High-Speed Adrenaline Velocity Vignette (>160 km/h) */}
-      {speedKmh > 155 && (
+      {/* High-Speed Adrenaline Velocity Vignette & Dynamic Wind Streaks (>135 km/h) */}
+      {speedKmh > 135 && (
         <div
-          className="absolute inset-0 pointer-events-none transition-opacity duration-200"
+          className="absolute inset-0 pointer-events-none transition-opacity duration-200 overflow-hidden"
           style={{
-            opacity: Math.min((speedKmh - 155) / 110, 0.65),
+            opacity: Math.min((speedKmh - 135) / 120, 0.75),
             background:
-              'radial-gradient(circle at center, transparent 50%, rgba(56, 189, 248, 0.08) 80%, rgba(2, 6, 23, 0.5) 100%)',
+              'radial-gradient(circle at center, transparent 45%, rgba(56, 189, 248, 0.08) 75%, rgba(2, 6, 23, 0.6) 100%)',
           }}
-        />
+        >
+          {/* Radial speed motion lines along the viewport edge */}
+          <svg className="w-full h-full opacity-60 mix-blend-screen" viewBox="0 0 1000 600" preserveAspectRatio="none">
+            <line x1="0" y1="40" x2="220" y2="100" stroke="#7dd3fc" strokeWidth="2" strokeDasharray="40 25" />
+            <line x1="0" y1="180" x2="260" y2="210" stroke="#ffffff" strokeWidth="1.5" strokeDasharray="60 30" />
+            <line x1="0" y1="460" x2="240" y2="390" stroke="#7dd3fc" strokeWidth="2" strokeDasharray="50 30" />
+            <line x1="1000" y1="50" x2="780" y2="110" stroke="#7dd3fc" strokeWidth="2" strokeDasharray="40 25" />
+            <line x1="1000" y1="220" x2="740" y2="230" stroke="#ffffff" strokeWidth="1.5" strokeDasharray="70 35" />
+            <line x1="1000" y1="470" x2="760" y2="400" stroke="#7dd3fc" strokeWidth="2" strokeDasharray="50 30" />
+          </svg>
+        </div>
       )}
 
       {/* Top Left: FPS Counter (if enabled) & Horizon Branding */}

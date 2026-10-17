@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { PlayerProfile } from '../types/game';
-import { Play, Flag, Wrench, Settings, HelpCircle, Volume2, VolumeX, Sparkles, Maximize, Minimize } from 'lucide-react';
+import { Play, Flag, Wrench, Settings, HelpCircle, Volume2, VolumeX, Sparkles, Maximize, Minimize, Download } from 'lucide-react';
 
 interface TitleScreenProps {
   profile: PlayerProfile;
@@ -19,6 +19,7 @@ interface TitleScreenProps {
   onOpenGarage: () => void;
   onOpenSettings: () => void;
   onOpenHelp: () => void;
+  onOpenDownload?: () => void;
 }
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
@@ -32,6 +33,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onOpenGarage,
   onOpenSettings,
   onOpenHelp,
+  onOpenDownload,
 }) => {
   return (
     <div className="absolute inset-0 select-none flex flex-col justify-between p-6 md:p-12 z-30 pointer-events-none text-white">
@@ -50,6 +52,17 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
 
         <div className="flex items-center space-x-2.5">
+          {onOpenDownload && (
+            <button
+              onClick={onOpenDownload}
+              className="h-12 px-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/80 text-emerald-300 flex items-center space-x-1.5 active:scale-95 transition-all shadow-lg font-bold text-xs uppercase tracking-wider hover:bg-emerald-500/30 shadow-emerald-500/20"
+              title="Download Horizon Open Roads on Mobile"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span>GET APP</span>
+            </button>
+          )}
+
           {onToggleFullscreen && (
             <button
               onClick={onToggleFullscreen}
@@ -147,6 +160,17 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             <Wrench className="w-5 h-5 text-cyan-400" />
             <span>GARAGE</span>
           </button>
+
+          {onOpenDownload && (
+            <button
+              onClick={onOpenDownload}
+              className="flex items-center space-x-2 px-6 py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-black font-black text-sm tracking-wider uppercase active:scale-95 transition-all shadow-xl hover:brightness-110 shadow-emerald-500/30"
+              title="Download App for Mobile (PWA)"
+            >
+              <Download className="w-5 h-5" />
+              <span>GET APP</span>
+            </button>
+          )}
 
           <button
             onClick={onOpenSettings}

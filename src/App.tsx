@@ -50,6 +50,7 @@ import { PauseModal } from './components/PauseModal';
 import { RaceResultsModal } from './components/RaceResultsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { HelpModal } from './components/HelpModal';
+import { InstallAppModal } from './components/InstallAppModal';
 
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -69,6 +70,7 @@ export default function App() {
   const [showEventSelect, setShowEventSelect] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
   const [showRaceResults, setShowRaceResults] = useState(false);
   const [webGlError, setWebGlError] = useState<string | null>(null);
 
@@ -922,6 +924,11 @@ export default function App() {
             audio.playClick();
             setShowHelpModal(true);
           }}
+          onOpenDownload={() => {
+            audio.init();
+            audio.playClick();
+            setShowInstallModal(true);
+          }}
         />
       )}
 
@@ -967,6 +974,11 @@ export default function App() {
               onToggleCamera={handleToggleCamera}
               onPause={handlePause}
               onToggleFullscreen={handleToggleFullscreen}
+              onOpenDownload={() => {
+                audio.init();
+                audio.playClick();
+                setShowInstallModal(true);
+              }}
             />
           )}
         </>
@@ -1070,6 +1082,15 @@ export default function App() {
             setShowHelpModal(false);
           }}
           onToggleFullscreen={handleToggleFullscreen}
+        />
+      )}
+
+      {showInstallModal && (
+        <InstallAppModal
+          onClose={() => {
+            audio.playClick();
+            setShowInstallModal(false);
+          }}
         />
       )}
     </div>

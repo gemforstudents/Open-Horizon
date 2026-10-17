@@ -140,9 +140,9 @@ export class VehiclePhysics {
     let engineAccel = 0;
 
     if (input.throttle > 0) {
-      // Taper off near top speed (aerodynamic drag)
-      const speedTaper = Math.max(0, 1.0 - Math.pow(currentSpeedMs / topSpeedMs, 2.0));
-      engineAccel = input.throttle * enginePowerFactor * speedTaper * gripMultiplier;
+      // Smooth power curve with high-speed aerodynamic drag taper
+      const speedTaper = Math.max(0.05, 1.0 - Math.pow(currentSpeedMs / topSpeedMs, 2.2));
+      engineAccel = input.throttle * enginePowerFactor * speedTaper;
     }
 
     let brakeDecel = 0;
@@ -151,37 +151,36 @@ export class VehiclePhysics {
         brakeDecel = input.brake * (this.config.braking * 2.2);
       } else {
         // Reverse gear
-        engineAccel = -input.brake * (enginePowerFactor * 0.45);
+        engineAccel = -input.brake * (enginePowerFactor * 0.5);
       }
     }
 
     // 6. Drift & Lateral Traction
     const handbrakeActive = input.handbrake;
     const slipSpeed = Math.abs(lateralSpeed);
-    const isHighAngle = Math.abs(lateralSpeed) > 3.8 && currentSpeedMs > 10.0;
+    const isHighAngle = Math.abs(lateralSpeed) > 4.2 && currentSpeedMs > 12.0;
 
     this.state.isDrifting = (handbrakeActive && currentSpeedMs > 6.0) || isHighAngle;
 
-    // Lateral grip response
-    let lateralGrip = this.state.isDrifting ? 0.38 : (0.92 * gripMultiplier);
+    // Lateral grip response: high arcade grip when not drifting
+    let lateralGrip = this.state.isDrifting ? 0.42 : 0.96;
     if (handbrakeActive) {
-      lateralGrip *= 0.45;
+      lateralGrip *= 0.4;
     }
 
-    // Heading yaw turn rate (Bicycle model approximation)
-    // Wheelbase ~ 2.7m. Turn rate is proportional to steer angle and speed, capped smoothly for stability.
+    // Heading yaw turn rate (High-speed stability + sharp agile turn response)
     let yawTurnRate = 0;
-    if (Math.abs(forwardSpeed) > 0.3) {
+    if (Math.abs(forwardSpeed) > 0.2) {
       const directionSign = forwardSpeed >= 0 ? 1 : -1;
-      // High-speed stability: turn radius expands naturally with speed
-      const effectiveSpeed = Math.min(Math.max(currentSpeedMs, 3.0), 45.0);
-      const baseTurnRate = (effectiveSpeed / 2.7) * Math.tan(this.currentSteerAngle);
-      yawTurnRate = baseTurnRate * directionSign * (this.config.handling / 9.0);
+      // High-speed natural turn radius
+      const effectiveSpeed = Math.min(Math.max(currentSpeedMs, 4.0), 55.0);
+      const baseTurnRate = (effectiveSpeed / 2.6) * Math.tan(this.currentSteerAngle);
+      yawTurnRate = baseTurnRate * directionSign * (this.config.handling / 8.5);
 
-      // Oversteer swing when drifting
+      // Oversteer swing when drifting with handbrake or at high angle
       if (this.state.isDrifting) {
         const driftSign = lateralSpeed > 0 ? 1 : -1;
-        yawTurnRate += driftSign * 0.4 * Math.min(slipSpeed / 10, 1.4);
+        yawTurnRate += driftSign * 0.45 * Math.min(slipSpeed / 8, 1.6);
       }
     }
 
@@ -190,21 +189,31 @@ export class VehiclePhysics {
     this.state.heading += deltaHeading;
 
     // 7. Velocity Integration with Centripetal Momentum Preservation
-    // Normal turning grips road and rotates the velocity vector with the car (DO NOT kill speed!)
-    const aeroDrag = 0.0009 * currentSpeedMs * currentSpeedMs;
-    // Cornering tire scrub is slight (2-4%), NOT 50% speed loss!
-    const corneringScrub = !this.state.isDrifting ? Math.abs(this.currentSteerAngle) * 0.04 * (currentSpeedMs > 8 ? 1 : 0) : 0.08;
-    const totalForwardAccel = engineAccel - (forwardSpeed > 0 ? (brakeDecel + (rollingResistance + corneringScrub) * 9.8 + aeroDrag) : -aeroDrag);
+    // Conserves full kinetic energy through turns - power never drops when steering!
+    const aeroDrag = 0.0006 * currentSpeedMs * currentSpeedMs;
+    const totalForwardAccel = engineAccel - (forwardSpeed > 0 ? (brakeDecel + rollingResistance * 3.0 + aeroDrag) : -aeroDrag);
 
-    // Integrate forward speed along chassis
+    // Forward speed along chassis integrates engine power
     let newForwardSpeed = forwardSpeed + totalForwardAccel * delta;
     if (targetGear > 0 && newForwardSpeed < 0 && input.throttle > 0) {
       newForwardSpeed = 0;
     }
 
-    // When gripping, velocity vector turns with the chassis (centripetal motion)
-    // Lateral slip is gently damped out while forward momentum is preserved!
-    const newLateralSpeed = lateralSpeed * Math.exp(-lateralGrip * 6.0 * delta);
+    // Centripetal motion: rotate the velocity vector smoothly with car's new heading
+    // This ensures cornering DOES NOT kill speed!
+    let newLateralSpeed = lateralSpeed;
+    if (this.state.isDrifting) {
+      // Controlled slip during drift
+      newLateralSpeed = lateralSpeed * Math.exp(-lateralGrip * 3.0 * delta);
+    } else {
+      // When gripping, lateral momentum transfers seamlessly into forward motion (conservation of speed)
+      const totalSpeedBeforeTurn = Math.hypot(newForwardSpeed, lateralSpeed);
+      newLateralSpeed = lateralSpeed * Math.exp(-lateralGrip * 9.0 * delta);
+      // Re-normalize forward speed to maintain momentum through curves
+      if (input.throttle > 0 && totalSpeedBeforeTurn > newForwardSpeed) {
+        newForwardSpeed = Math.max(newForwardSpeed, totalSpeedBeforeTurn * 0.99);
+      }
+    }
 
     // Compute updated forward/right vectors based on new heading
     const newForwardX = Math.sin(this.state.heading);
@@ -212,7 +221,7 @@ export class VehiclePhysics {
     const newRightX = Math.cos(this.state.heading);
     const newRightZ = -Math.sin(this.state.heading);
 
-    // Reconstruct world velocity from updated axes to preserve momentum through turns
+    // Reconstruct world velocity from updated axes
     this.state.vx = newForwardX * newForwardSpeed + newRightX * newLateralSpeed;
     this.state.vz = newForwardZ * newForwardSpeed + newRightZ * newLateralSpeed;
 
